@@ -36,7 +36,7 @@ const DEFAULT_REQUEST: PromotionRequest = {
   feedback: "",
 };
 
-const POLL_INTERVAL_MS = 2000;
+const POLL_INTERVAL_MS = 5000;
 const POLL_MAX_MS = 5 * 60 * 1000;
 
 export function WizardShell() {
