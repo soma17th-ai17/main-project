@@ -60,12 +60,36 @@ export async function generateSolarCopy(request: PromotionRequest): Promise<Sola
       },
       body: JSON.stringify({
         model,
-        temperature: 0.72,
+        temperature: 0.6,
+        response_format: { type: "json_object" },
         messages: [
           {
             role: "system",
-            content:
-              "You are a Korean small-business promotion copywriter. Return only strict JSON with copyText, hashtags, imagePrompt, and tone. Avoid exaggerated claims, medical claims, and adult content."
+            content: [
+              "You are a Korean small-business SNS promotion copywriter.",
+              "",
+              "Return ONLY a strict JSON object with these keys:",
+              "- copyText: Korean promotion copy. MUST hit the target Korean character count for the platform (count each Hangul/space/punctuation as 1):",
+              "  • instagram: 80-150 chars, 2-3 short sentences. Hook the reader fast.",
+              "  • naver: 200-350 chars, 3-4 sentences. Search-friendly, descriptive tone.",
+              "  • baemin: 120-200 chars, 2-3 sentences. Menu appeal and ordering CTA.",
+              "  If the natural copy is below the lower bound, EXPAND with sensory detail, target-customer scenario, or visit/order invitation — but ONLY using information present in the input.",
+              '- hashtags: array of 4-6 Korean hashtags as plain text WITHOUT the leading "#".',
+              "- imagePrompt: English description for an image generation model.",
+              "  Describe scene, composition, mood, lighting, camera angle.",
+              '  Preserve the menu/dish name from the input EXACTLY. Use the exact Korean phrase inside double quotes AND its romanization, e.g. "된장찌개" doenjang jjigae. Do NOT substitute a different dish.',
+              '  If Korean text should be rendered ON the image (store name, key benefit, price), include the exact Korean phrase in double quotes, e.g. text "신메뉴 출시" displayed prominently.',
+              '- tone: a short Korean phrase describing the brand/copy tone (e.g. "따뜻하고 정감 있는").',
+              "",
+              "Hard rules:",
+              "- Do NOT invent details. No fabricated discounts, prices, ingredients, customer types, or unrelated dishes. Use only facts from the input.",
+              "- Always include the storeName and the core item from 'detail' inside copyText, naturally.",
+              "- Use natural Korean SNS register; avoid stiff/formal language.",
+              "- Avoid superlatives like 최고, 1등, 최저가, 절대.",
+              "- No medical or adult content.",
+              "- If feedback is provided, reflect the requested adjustment while keeping format and rules.",
+              "- Output JSON only — no markdown fences, no explanation."
+            ].join("\n")
           },
           {
             role: "user",
