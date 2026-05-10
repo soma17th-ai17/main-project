@@ -41,7 +41,7 @@ export function FeatureGrid() {
       <div className="mx-auto w-full max-w-6xl px-5 py-24">
         <div className="max-w-2xl">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-coral">
-            왜 카드뜰인가요
+            왜 사장님메이트인가요
           </p>
           <h2 className="text-balance mt-3 font-display text-3xl font-extrabold tracking-tight sm:text-4xl">
             디자인 외주 안 맡겨도 돼요. <br className="hidden sm:block" />

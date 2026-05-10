@@ -68,11 +68,11 @@ export function ShowcaseMarquee() {
             </p>
             <h2 className="text-balance mt-3 font-display text-3xl font-extrabold tracking-tight sm:text-4xl">
               사장님 가게마다 톤은 달라야죠. <br className="hidden sm:block" />
-              카드뜰은 6가지 무드를 자동 추천해요.
+              사장님메이트는 6가지 무드를 자동 추천해요.
             </h2>
           </div>
           <p className="max-w-xs text-sm text-muted-foreground">
-            카드뜰의 단일 카드 출력 예시입니다. 이미지는 mock SVG 로 대체.
+            사장님메이트의 단일 카드 출력 예시입니다. 이미지는 mock SVG 로 대체.
           </p>
         </div>
       </div>
