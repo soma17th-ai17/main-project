@@ -1,72 +1,62 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { z } from "zod";
-import { generateMockCards } from "@/lib/mock-generator";
-import { refineCardsWithSolar } from "@/lib/solar";
-import { generateCardImages } from "@/lib/image-gen";
-import type { GenerationResult } from "@/lib/types";
+import { runPromotionJob } from "@/lib/generator";
+import { setJob } from "@/lib/store";
+import type { JobRecord, PromotionRequest } from "@/lib/types";
 
-const PURPOSE = ["new-menu", "event", "daily", "reopening", "review"] as const;
-const TONE = ["warm", "trendy", "premium", "playful", "calm"] as const;
+export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
-const briefSchema = z.object({
-  storeName: z.string().min(1, "가게명을 입력해주세요").max(40),
-  category: z.string().min(1, "업종을 입력해주세요").max(40),
-  purpose: z.enum(PURPOSE),
-  tone: z.enum(TONE),
-  highlight: z.string().max(60).default(""),
-  detail: z.string().max(200).default(""),
-  ctaText: z.string().max(40).optional(),
-  priceText: z.string().max(40).optional(),
+const purposeEnum = z.enum([
+  "new-menu",
+  "event",
+  "daily",
+  "reopening",
+  "review",
+]);
+
+const platformEnum = z.enum(["instagram", "naver", "baemin"]);
+
+const requestSchema = z.object({
+  store: z.object({
+    storeName: z.string().trim().min(1, "상호명을 입력해주세요."),
+    category: z.string().trim().min(1, "업종을 입력해주세요."),
+    vibe: z.string().trim().min(1, "분위기/톤을 입력해주세요."),
+    description: z.string().trim().optional(),
+  }),
+  purpose: purposeEnum,
+  detail: z.string().trim().min(1, "홍보 상세 내용을 입력해주세요."),
+  platform: platformEnum.optional(),
+  feedback: z.string().trim().optional(),
 });
 
-const payloadSchema = z.object({
-  brief: briefSchema,
-  count: z.number().int().min(1).max(6).default(4),
-  seed: z.string().optional(),
-});
-
-export async function POST(req: Request) {
-  let raw: unknown;
+export async function POST(request: Request) {
+  let body: PromotionRequest;
   try {
-    raw = await req.json();
-  } catch {
-    return NextResponse.json(
-      { ok: false, error: "요청 본문이 JSON 이 아닙니다." },
-      { status: 400 },
-    );
+    body = requestSchema.parse(await request.json());
+  } catch (err) {
+    const message =
+      err instanceof z.ZodError
+        ? err.issues.map((i) => i.message).join(" / ")
+        : "요청 형식이 올바르지 않습니다.";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 
-  const parsed = payloadSchema.safeParse(raw);
-  if (!parsed.success) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "입력값을 확인해주세요.",
-        issues: parsed.error.issues.map((i) => ({
-          path: i.path.join("."),
-          message: i.message,
-        })),
-      },
-      { status: 422 },
-    );
-  }
-
-  const { brief, count, seed } = parsed.data;
-  const baseCards = generateMockCards({ brief, count, seed });
-  const { cards: copyCards, source: copySource, notes: copyNotes } = await refineCardsWithSolar(brief, baseCards);
-  const { cards: finalCards, source: imageSource, notes: imageNotes } = await generateCardImages({ brief, cards: copyCards });
-
-  const notes = [copyNotes, imageNotes].filter(Boolean).join(" · ") || undefined;
-
-  const result: GenerationResult = {
-    id: `gen-${Date.now().toString(36)}`,
-    createdAt: new Date().toISOString(),
-    brief,
-    cards: finalCards,
-    source: copySource,
-    imageSource,
-    notes,
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const job: JobRecord = {
+    id,
+    status: "pending",
+    request: body,
+    agentTrace: [],
+    startedAt: now,
+    updatedAt: now,
   };
+  setJob(job);
 
-  return NextResponse.json({ ok: true, result });
+  after(async () => {
+    await runPromotionJob(id, body);
+  });
+
+  return NextResponse.json({ id, status: job.status }, { status: 202 });
 }

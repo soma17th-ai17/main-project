@@ -1,144 +1,136 @@
-import type { CardCopy, GeneratedCard, StoreBrief } from "./types";
+import type { PromotionRequest, SolarCopy } from "./types";
 
-const DEFAULT_MODEL = process.env.UPSTAGE_MODEL || "solar-pro3";
-const DEFAULT_BASE = process.env.UPSTAGE_BASE_URL || "https://api.upstage.ai/v1";
+const purposeLabels: Record<PromotionRequest["purpose"], string> = {
+  "new-menu": "신메뉴 출시",
+  event: "이벤트",
+  daily: "일상 홍보",
+  reopening: "재오픈/리뉴얼",
+  review: "단골 후기",
+};
 
-interface SolarRefinement {
-  cards: GeneratedCard[];
-  source: "solar" | "fallback";
-  notes?: string;
-}
+function fallbackCopy(request: PromotionRequest): SolarCopy {
+  const storeName = request.store.storeName || "우리 가게";
+  const category = request.store.category || "가게";
+  const detail = request.detail || purposeLabels[request.purpose];
+  const vibe = request.store.vibe || "따뜻한";
+  const feedbackLine = request.feedback ? `\n요청하신 방향도 반영했어요: ${request.feedback}` : "";
 
-export function isSolarConfigured(): boolean {
-  return Boolean(process.env.UPSTAGE_API_KEY);
-}
-
-interface SolarCard {
-  headline?: string;
-  subheadline?: string;
-  bodyLines?: string[];
-  hashtags?: string[];
-  cta?: string;
-  pricePill?: string;
-  badge?: string;
-}
-
-function mergeCopy(base: CardCopy, patch: SolarCard | undefined): CardCopy {
-  if (!patch) return base;
-  const trim = (value: string | undefined, fallback: string) =>
-    typeof value === "string" && value.trim().length ? value.trim() : fallback;
-  const trimmedHashtags =
-    patch.hashtags && patch.hashtags.length
-      ? patch.hashtags
-          .map((t) => t.replace(/^#/, "").trim())
-          .filter(Boolean)
-          .slice(0, 5)
-      : base.hashtags;
   return {
-    headline: trim(patch.headline, base.headline),
-    subheadline: trim(patch.subheadline, base.subheadline),
-    bodyLines:
-      patch.bodyLines && patch.bodyLines.length
-        ? patch.bodyLines.slice(0, 3).map((line) => line.trim()).filter(Boolean)
-        : base.bodyLines,
-    hashtags: trimmedHashtags,
-    badge: trim(patch.badge, base.badge ?? ""),
-    cta: trim(patch.cta, base.cta ?? ""),
-    pricePill: trim(patch.pricePill, base.pricePill ?? ""),
+    copyText: `${storeName}에서 준비한 ${detail} 소식입니다.\n${vibe} 분위기의 ${category} 감성을 담아 오늘 방문하고 싶은 이유를 전해드려요.${feedbackLine}\n가볍게 들러 특별한 순간을 만나보세요.`,
+    hashtags: ["우리동네가게", "소상공인", category.replace(/\s+/g, ""), detail.replace(/\s+/g, "")].filter(Boolean),
+    imagePrompt: `${category} 매장의 ${detail} 홍보용 SNS 이미지, ${vibe} 톤, 깔끔한 구성, 메뉴와 분위기가 잘 보이는 장면`,
+    tone: vibe,
+    source: "fallback",
   };
 }
 
-function buildPrompt(brief: StoreBrief, baseCards: GeneratedCard[]): string {
-  const skeleton = baseCards.map((card, idx) => ({
-    index: idx + 1,
-    template: card.template,
-    headlineHint: card.copy.headline,
-    subheadlineHint: card.copy.subheadline,
-  }));
+function parseSolarJson(content: string, request: PromotionRequest): SolarCopy {
+  const parsed = JSON.parse(content) as Partial<SolarCopy>;
+  if (!parsed.copyText || !Array.isArray(parsed.hashtags) || !parsed.imagePrompt) {
+    return fallbackCopy(request);
+  }
 
-  return [
-    "너는 한국 소상공인을 위한 인스타 카드뉴스 카피라이터야.",
-    "아래 가게 정보로 카드뉴스 4장을 작성해줘.",
-    "각 카드는 headline, subheadline, bodyLines(2줄 이내), hashtags(3-5개), cta, pricePill, badge 필드를 가진 JSON object 야.",
-    "headline은 12자 이내, subheadline은 18자 이내, bodyLines는 각 22자 이내. 과장 광고/허위 표현 금지.",
-    "톤은 밝고 신뢰감 있게. 이모지는 카드당 0-1개만.",
-    "응답은 반드시 JSON: { \"cards\": [...4개...] } 형태.",
-    "",
-    `가게명: ${brief.storeName}`,
-    `업종: ${brief.category}`,
-    `홍보 목적: ${brief.purpose}`,
-    `톤: ${brief.tone}`,
-    `핵심 키워드: ${brief.highlight}`,
-    `상세 설명: ${brief.detail || "(없음)"}`,
-    `가격 / 기간: ${brief.priceText || "(없음)"}`,
-    `CTA 제안: ${brief.ctaText || "(없음)"}`,
-    "",
-    "참고용 카드 골격:",
-    JSON.stringify(skeleton, null, 2),
-  ].join("\n");
+  return {
+    copyText: String(parsed.copyText),
+    hashtags: parsed.hashtags.map(String).slice(0, 6),
+    imagePrompt: String(parsed.imagePrompt),
+    tone: parsed.tone ? String(parsed.tone) : request.store.vibe,
+    source: "solar",
+  };
 }
 
-export async function refineCardsWithSolar(
-  brief: StoreBrief,
-  baseCards: GeneratedCard[],
-): Promise<SolarRefinement> {
-  if (!isSolarConfigured()) {
-    return { cards: baseCards, source: "fallback", notes: "UPSTAGE_API_KEY 미설정" };
+export function isSolarConfigured() {
+  return Boolean(process.env.UPSTAGE_API_KEY);
+}
+
+export async function generateSolarCopy(request: PromotionRequest): Promise<SolarCopy> {
+  if (!process.env.UPSTAGE_API_KEY) {
+    return fallbackCopy(request);
   }
-  const prompt = buildPrompt(brief, baseCards);
+
+  const baseUrl = process.env.UPSTAGE_BASE_URL ?? "https://api.upstage.ai/v1";
+  const model = process.env.UPSTAGE_MODEL ?? "solar-pro3";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 18000);
-    const res = await fetch(`${DEFAULT_BASE}/chat/completions`, {
+    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
-      signal: controller.signal,
       headers: {
-        "Content-Type": "application/json",
         Authorization: `Bearer ${process.env.UPSTAGE_API_KEY}`,
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: DEFAULT_MODEL,
-        temperature: 0.7,
+        model,
+        temperature: 0.6,
         response_format: { type: "json_object" },
         messages: [
           {
             role: "system",
-            content:
-              "한국어 카드뉴스 카피라이팅 어시스턴트. 무조건 한국어, 자연스러운 존댓말. JSON only.",
+            content: [
+              "You are a Korean small-business SNS promotion copywriter.",
+              "",
+              "Return ONLY a strict JSON object with these keys:",
+              "- copyText: Korean promotion copy. MUST hit the target Korean character count for the platform (count each Hangul/space/punctuation as 1):",
+              "  • instagram: 80-150 chars, 2-3 short sentences. Hook the reader fast.",
+              "  • naver: 200-350 chars, 3-4 sentences. Search-friendly, descriptive tone.",
+              "  • baemin: 120-200 chars, 2-3 sentences. Menu appeal and ordering CTA.",
+              "  If the natural copy is below the lower bound, EXPAND with sensory detail, target-customer scenario, or visit/order invitation — but ONLY using information present in the input.",
+              '- hashtags: array of 4-6 Korean hashtags as plain text WITHOUT the leading "#".',
+              "- imagePrompt: English description for an image generation model.",
+              "  TARGET STYLE: Instagram promotional card / 카드뉴스 — NOT a realistic photograph or candid storefront.",
+              "  Composition:",
+              "    • Clean background: soft color gradient, blurred food close-up, or minimalist solid color with brand accent",
+              "    • Bold large Korean headline text taking 30-50% of the frame (storeName + key message)",
+              "    • Optional secondary smaller Korean line",
+              "    • Modern flat/illustrated style OR hero food shot with an overlay text panel",
+              "    • Square or vertical layout with intentional text margins",
+              "  Avoid: storefront/exterior signage, candid restaurant scenes, photojournalistic angles, busy backgrounds with crowds.",
+              '  Preserve the menu/dish name from the input EXACTLY. Use the exact Korean phrase inside double quotes AND its romanization, e.g. "된장찌개" doenjang jjigae. Do NOT substitute a different dish.',
+              '  Always include the exact Korean phrase(s) for storeName and the key benefit/menu in double quotes within the prompt, e.g. text "소마분식" and "된장찌개 한상 신메뉴" displayed prominently with strong typography.',
+              '- tone: a short Korean phrase describing the brand/copy tone (e.g. "따뜻하고 정감 있는").',
+              "",
+              "Hard rules:",
+              "- Do NOT invent details. No fabricated discounts, prices, ingredients, customer types, or unrelated dishes. Use only facts from the input.",
+              "- Always include the storeName and the core item from 'detail' inside copyText, naturally.",
+              "- Use natural Korean SNS register; avoid stiff/formal language.",
+              "- Avoid superlatives like 최고, 1등, 최저가, 절대.",
+              "- No medical or adult content.",
+              "- If feedback is provided, reflect the requested adjustment while keeping format and rules.",
+              "- Output JSON only — no markdown fences, no explanation.",
+            ].join("\n"),
           },
-          { role: "user", content: prompt },
+          {
+            role: "user",
+            content: JSON.stringify({
+              store: request.store,
+              purpose: purposeLabels[request.purpose],
+              detail: request.detail,
+              platform: request.platform ?? "instagram",
+              feedback: request.feedback ?? "",
+            }),
+          },
         ],
       }),
+      signal: controller.signal,
     });
-    clearTimeout(timeout);
-    if (!res.ok) {
-      return {
-        cards: baseCards,
-        source: "fallback",
-        notes: `Solar HTTP ${res.status}`,
-      };
+
+    if (!response.ok) {
+      return fallbackCopy(request);
     }
-    const data = await res.json();
-    const content: string | undefined = data?.choices?.[0]?.message?.content;
-    if (!content) {
-      return { cards: baseCards, source: "fallback", notes: "Solar 응답 비어있음" };
-    }
-    let parsed: { cards?: SolarCard[] };
-    try {
-      parsed = JSON.parse(content);
-    } catch {
-      return { cards: baseCards, source: "fallback", notes: "Solar JSON parse 실패" };
-    }
-    const refined = baseCards.map((card, i) => ({
-      ...card,
-      copy: mergeCopy(card.copy, parsed.cards?.[i]),
-    }));
-    return { cards: refined, source: "solar" };
-  } catch (err) {
-    return {
-      cards: baseCards,
-      source: "fallback",
-      notes: err instanceof Error ? err.message : "Solar 호출 예외",
+
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
     };
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) {
+      return fallbackCopy(request);
+    }
+
+    return parseSolarJson(content, request);
+  } catch {
+    return fallbackCopy(request);
+  } finally {
+    clearTimeout(timeout);
   }
 }

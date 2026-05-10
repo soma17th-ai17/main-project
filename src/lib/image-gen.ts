@@ -1,83 +1,93 @@
-import type { GeneratedCard, StoreBrief } from "./types";
+type AzureImageResponse = {
+  data?: Array<{ b64_json?: string; url?: string }>;
+  error?: { message?: string };
+};
 
-const OPENAI_BASE = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
-const OPENAI_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-2";
+export type GeneratedAzureImage = {
+  dataUrl: string;
+  source: "azure";
+};
 
-export function isImageGenConfigured(): boolean {
-  return Boolean(process.env.OPENAI_API_KEY);
+export function isAzureImageConfigured() {
+  return Boolean(
+    process.env.AZURE_IMAGE_ENDPOINT &&
+      process.env.AZURE_IMAGE_DEPLOYMENT &&
+      process.env.AZURE_IMAGE_API_KEY,
+  );
 }
 
-interface ImageGenInput {
-  brief: StoreBrief;
-  cards: GeneratedCard[];
+async function callAzureOnce(url: string, body: string, signal: AbortSignal) {
+  return fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.AZURE_IMAGE_API_KEY}`,
+    },
+    body,
+    signal,
+  });
 }
 
-interface ImageGenResult {
-  cards: GeneratedCard[];
-  source: "gpt-image-2" | "mock";
-  notes?: string;
+function parseRetryAfter(headerValue: string | null, bodyText: string): number {
+  if (headerValue) {
+    const seconds = Number.parseInt(headerValue, 10);
+    if (Number.isFinite(seconds) && seconds > 0) return Math.min(seconds, 30);
+  }
+  const match = bodyText.match(/retry after (\d+)\s*seconds?/i);
+  if (match) {
+    const seconds = Number.parseInt(match[1], 10);
+    if (Number.isFinite(seconds) && seconds > 0) return Math.min(seconds, 30);
+  }
+  return 15;
 }
 
-function buildImagePrompt(brief: StoreBrief, card: GeneratedCard): string {
-  return [
-    `Korean small business Instagram card-news visual.`,
-    `Store: ${brief.storeName} (${brief.category}).`,
-    `Purpose: ${brief.purpose}. Tone: ${brief.tone}.`,
-    `Hero copy: "${card.copy.headline}".`,
-    brief.highlight ? `Key visual subject: ${brief.highlight}.` : "",
-    `Composition: square 1:1, clean editorial, soft natural lighting,`,
-    `appetizing if food, premium brand-feel, no text overlay (text is rendered separately).`,
-  ].filter(Boolean).join(" ");
-}
-
-export async function generateCardImages({
-  brief,
-  cards,
-}: ImageGenInput): Promise<ImageGenResult> {
-  if (!isImageGenConfigured()) {
-    return { cards, source: "mock", notes: "OPENAI_API_KEY 미설정 — mock 이미지로 동작" };
+export async function generateAzureImage(prompt: string): Promise<GeneratedAzureImage | null> {
+  if (!isAzureImageConfigured()) {
+    return null;
   }
 
-  const updated: GeneratedCard[] = [];
-  for (const card of cards) {
-    try {
-      const res = await fetch(`${OPENAI_BASE}/images/generations`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: OPENAI_MODEL,
-          prompt: buildImagePrompt(brief, card),
-          size: "1024x1024",
-          n: 1,
-        }),
-      });
-      if (!res.ok) {
-        updated.push({ ...card, imageSource: "mock" });
-        continue;
-      }
-      const data = await res.json();
-      const url = data?.data?.[0]?.url || data?.data?.[0]?.b64_json;
-      if (!url) {
-        updated.push({ ...card, imageSource: "mock" });
-        continue;
-      }
-      updated.push({
-        ...card,
-        imageUrl: typeof url === "string" && url.startsWith("http") ? url : `data:image/png;base64,${url}`,
-        imageSource: "gpt-image-2",
-      });
-    } catch {
-      updated.push({ ...card, imageSource: "mock" });
+  const endpoint = process.env.AZURE_IMAGE_ENDPOINT!.replace(/\/$/, "");
+  const deployment = process.env.AZURE_IMAGE_DEPLOYMENT!;
+  const apiVersion = process.env.AZURE_IMAGE_API_VERSION ?? "2024-02-01";
+  const url = `${endpoint}/openai/deployments/${deployment}/images/generations?api-version=${apiVersion}`;
+  const body = JSON.stringify({
+    prompt,
+    size: "1024x1024",
+    quality: "medium",
+    output_format: "png",
+    n: 1,
+  });
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 180000);
+
+  try {
+    let response = await callAzureOnce(url, body, controller.signal);
+
+    if (response.status === 429) {
+      const text = await response.text();
+      const wait = parseRetryAfter(response.headers.get("retry-after"), text);
+      await new Promise((resolve) => setTimeout(resolve, wait * 1000));
+      response = await callAzureOnce(url, body, controller.signal);
     }
-  }
 
-  const anyReal = updated.some((c) => c.imageSource === "gpt-image-2");
-  return {
-    cards: updated,
-    source: anyReal ? "gpt-image-2" : "mock",
-    notes: anyReal ? undefined : "이미지 생성 실패 — mock 폴백",
-  };
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = (await response.json()) as AzureImageResponse;
+    const b64 = data.data?.[0]?.b64_json;
+    if (!b64) {
+      return null;
+    }
+
+    return {
+      dataUrl: `data:image/png;base64,${b64}`,
+      source: "azure",
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
 }

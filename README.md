@@ -1,22 +1,23 @@
 # 카드뜰 (SOMA17 AI 17조 메인 프로젝트)
 
-소상공인을 위한 인스타 카드뉴스 도우미. 사진 한 장과 가게 정보만 입력하면
-AI 가 카드뉴스 4컷, 홍보 문구, 해시태그까지 만들어 줍니다.
+소상공인을 위한 인스타 카드뉴스 도우미. 가게 정보만 입력하면
+AI 에이전트가 카드 한 장과 SNS 캡션, 해시태그를 만들어 줍니다.
 
 - Next.js 16 (App Router) + React 19
 - Tailwind v4 + shadcn/ui (Radix · Nova preset)
-- Motion (애니메이션) · html-to-image (PNG 다운로드) · react-dropzone
-- Upstage Solar (텍스트 생성) — 키 미설정 시 fallback 카피
-- 이미지 생성은 외부 API 미정으로 데모 mock
+- Motion (애니메이션) · sonner (토스트)
+- LangGraph.js — Solar → Azure 이미지 → Upstage IE 검증 파이프라인
+- Upstage Solar Pro 3 (텍스트) — 키 미설정 시 fallback 카피
+- Azure GPT-Image-2 (이미지) — 키 미설정 시 mock SVG
+- Upstage Information Extract — 이미지 OCR 검증 (선택)
 
 ## 화면 구성
 
 - `/` — 랜딩 (Hero + 4단계 안내 + CTA)
-- `/studio` — 4단계 위저드
-  1. 사진 업로드 (드래그&드롭 / 최대 4장)
-  2. 가게 정보 입력 (이름 · 업종 · 홍보 목적 · 톤 · 핵심 키워드 · 상세 · 가격/CTA)
-  3. AI 작업 (애니메이션 진행 표시)
-  4. 결과 확인 (카드 4컷 미리보기 · 캡션 · 해시태그 · PNG 다운로드)
+- `/studio` — 3단계 위저드
+  1. 가게 정보 입력 (가게명 · 업종 · 분위기 · 홍보 목적 · 상세 내용 · 플랫폼)
+  2. AI 작업 진행 (CopyWriter → ImageGenerator → Verifier 라이브 트레이스)
+  3. 결과 확인 (카드 1장 · 캡션 · 해시태그 · 검증 배지 · 피드백 재생성)
 
 ## 로컬 실행
 
@@ -32,22 +33,32 @@ npm run dev
 `.env.example` 을 `.env.local` 로 복사 후 채우세요. 모두 서버 전용입니다.
 
 ```bash
+# Upstage Solar (텍스트 카피)
 UPSTAGE_API_KEY=
 UPSTAGE_MODEL=solar-pro3
 UPSTAGE_BASE_URL=https://api.upstage.ai/v1
+
+# Azure OpenAI Service (이미지 생성)
+AZURE_IMAGE_ENDPOINT=
+AZURE_IMAGE_DEPLOYMENT=gpt-image-2
+AZURE_IMAGE_API_VERSION=2025-04-01-preview
+AZURE_IMAGE_API_KEY=
 ```
 
-`UPSTAGE_API_KEY` 가 없거나 호출이 실패하면 fallback 카피를 반환합니다.
+- `UPSTAGE_API_KEY` 미설정 시 fallback 카피
+- Azure 키 4종 중 하나라도 미설정 시 mock SVG 이미지
+- Upstage IE 검증은 `UPSTAGE_API_KEY` 가 있을 때만 활성화됨
 
 ## API
 
-- `GET  /api/health` — `{ ok, solarConfigured, imageProvider }`
-- `POST /api/cards/generate` — body: `{ brief, photoIds[], count?, seed? }`
+- `POST /api/cards/generate` — body: `PromotionRequest`. 응답 `{ id, status: "pending" }` (202)
+- `GET  /api/cards/[id]` — `JobRecord` (상태 폴링)
+- `POST /api/cards/[id]/retry` — body: `{ feedback?: string }`. 응답 `{ id, status }` (202)
 
 ## 검증
 
 ```bash
-npm run lint        # eslint + tsc 미포함, 별도로 tsc 호출 권장
+npm run lint        # eslint
 npm run build       # next build (TypeScript 체크 포함)
 npm run test:e2e    # Playwright smoke (PLAYWRIGHT_BASE_URL 환경변수)
 ```
@@ -61,5 +72,6 @@ PLAYWRIGHT_BASE_URL=https://soma17-ai17-main-project.vercel.app npm run test:e2e
 ## Vercel 배포
 
 - Vercel CLI 로 배포되어 있습니다 (`vercel --prod`).
-- env 에 `UPSTAGE_API_KEY` 를 설정해야 Solar 카피가 켜집니다.
-- 미설정 시 fallback 카피 + mock 이미지로 정상 동작합니다.
+- 비동기 작업 패턴: POST 가 `after()` 로 백그라운드 작업 시작, GET 폴링.
+- `maxDuration=300` (Pro 플랜 필요) — 이미지 생성 + 재시도 최대 ~3분.
+- 잡 저장소는 in-memory (`globalThis`) — 콜드 스타트 시 상태 손실 가능 (MVP 한계).

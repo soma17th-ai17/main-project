@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import { ArrowLeft, ArrowRight, ImagePlus, ClipboardList } from "lucide-react";
@@ -10,7 +10,12 @@ import { StepProgress, type StepDef } from "./step-progress";
 import { StoreForm } from "./store-form";
 import { ProcessingStep } from "./processing-step";
 import { ResultStep } from "./result-step";
-import type { GenerationResult, StoreBrief } from "@/lib/types";
+import type {
+  AgentTrace,
+  GeneratedContent,
+  JobRecord,
+  PromotionRequest,
+} from "@/lib/types";
 
 const STEPS: StepDef[] = [
   { key: "info", label: "가게 정보", short: "정보" },
@@ -18,86 +23,194 @@ const STEPS: StepDef[] = [
   { key: "result", label: "결과 확인", short: "결과" },
 ];
 
-const DEFAULT_BRIEF: StoreBrief = {
-  storeName: "",
-  category: "",
+const DEFAULT_REQUEST: PromotionRequest = {
+  store: {
+    storeName: "",
+    category: "",
+    vibe: "따뜻한",
+    description: "",
+  },
   purpose: "new-menu",
-  tone: "warm",
-  highlight: "",
   detail: "",
-  ctaText: "",
-  priceText: "",
+  platform: "instagram",
+  feedback: "",
 };
 
-const PROCESSING_MIN_MS = 2400;
+const POLL_INTERVAL_MS = 2000;
+const POLL_MAX_MS = 5 * 60 * 1000;
 
 export function WizardShell() {
   const [stepIdx, setStepIdx] = useState(0);
-  const [brief, setBrief] = useState<StoreBrief>(DEFAULT_BRIEF);
-  const [result, setResult] = useState<GenerationResult | null>(null);
+  const [request, setRequest] = useState<PromotionRequest>(DEFAULT_REQUEST);
+  const [result, setResult] = useState<GeneratedContent | null>(null);
   const [busy, setBusy] = useState(false);
   const [processingStartedAt, setProcessingStartedAt] = useState(0);
-  const [processingDone, setProcessingDone] = useState(false);
+  const [agentTrace, setAgentTrace] = useState<AgentTrace[]>([]);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelledRef = useRef(false);
 
   const canNext = useMemo(() => {
     if (stepIdx === 0) {
-      return brief.storeName.trim().length > 0 && brief.category.trim().length > 0;
+      return (
+        request.store.storeName.trim().length > 0 &&
+        request.store.category.trim().length > 0 &&
+        request.store.vibe.trim().length > 0 &&
+        request.detail.trim().length > 0
+      );
     }
     return true;
-  }, [stepIdx, brief]);
+  }, [stepIdx, request]);
 
-  const runGenerate = useCallback(async () => {
-    setBusy(true);
-    setProcessingDone(false);
-    setProcessingStartedAt(Date.now());
-    setStepIdx(1);
+  const stopPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }, []);
 
-    const startedAt = Date.now();
-    try {
-      const res = await fetch("/api/cards/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          brief,
-          count: 4,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data?.ok) {
-        const message = data?.error || `생성 실패 (HTTP ${res.status})`;
-        toast.error(message);
+  useEffect(() => stopPolling, [stopPolling]);
+
+  const pollJob = useCallback(
+    (jobId: string, startedAt: number) => {
+      const startTime = Date.now();
+
+      const tick = async () => {
+        if (cancelledRef.current) return;
+        if (Date.now() - startTime > POLL_MAX_MS) {
+          toast.error("응답이 너무 오래 걸려요. 잠시 후 다시 시도해주세요.");
+          setBusy(false);
+          setStepIdx(0);
+          return;
+        }
+        try {
+          const res = await fetch(`/api/cards/${jobId}`, { cache: "no-store" });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data?.error || `조회 실패 (HTTP ${res.status})`);
+          }
+          const job = (await res.json()) as JobRecord;
+          setAgentTrace(job.agentTrace ?? []);
+
+          if (job.status === "done" && job.result) {
+            stopPolling();
+            setResult(job.result);
+            setBusy(false);
+            setStepIdx(2);
+            return;
+          }
+          if (job.status === "error") {
+            stopPolling();
+            toast.error(job.error || "생성 중 오류가 발생했어요.");
+            setBusy(false);
+            setStepIdx(0);
+            return;
+          }
+          pollTimerRef.current = setTimeout(tick, POLL_INTERVAL_MS);
+        } catch (err) {
+          stopPolling();
+          toast.error(err instanceof Error ? err.message : "조회 오류");
+          setBusy(false);
+          setStepIdx(0);
+        }
+      };
+
+      pollTimerRef.current = setTimeout(tick, POLL_INTERVAL_MS);
+      void startedAt;
+    },
+    [stopPolling],
+  );
+
+  const startGenerate = useCallback(
+    async (overrideRequest?: PromotionRequest) => {
+      stopPolling();
+      cancelledRef.current = false;
+      setBusy(true);
+      setAgentTrace([]);
+      setProcessingStartedAt(Date.now());
+      setStepIdx(1);
+
+      const payload = overrideRequest ?? request;
+      try {
+        const res = await fetch("/api/cards/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || !data?.id) {
+          const message = data?.error || `생성 실패 (HTTP ${res.status})`;
+          toast.error(message);
+          setBusy(false);
+          setStepIdx(0);
+          return;
+        }
+        setActiveJobId(data.id as string);
+        pollJob(data.id as string, Date.now());
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "네트워크 오류");
         setBusy(false);
         setStepIdx(0);
+      }
+    },
+    [request, pollJob, stopPolling],
+  );
+
+  const startRetry = useCallback(
+    async (feedback?: string) => {
+      if (!activeJobId) {
+        startGenerate();
         return;
       }
-      const elapsed = Date.now() - startedAt;
-      const wait = Math.max(0, PROCESSING_MIN_MS - elapsed);
-      setTimeout(() => {
-        setProcessingDone(true);
-        setResult(data.result as GenerationResult);
+      stopPolling();
+      cancelledRef.current = false;
+      setBusy(true);
+      setAgentTrace([]);
+      setProcessingStartedAt(Date.now());
+      setStepIdx(1);
+
+      try {
+        const res = await fetch(`/api/cards/${activeJobId}/retry`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ feedback: feedback ?? "" }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data?.id) {
+          throw new Error(data?.error || `재생성 실패 (HTTP ${res.status})`);
+        }
+        setActiveJobId(data.id as string);
+        pollJob(data.id as string, Date.now());
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "재생성 오류");
         setBusy(false);
         setStepIdx(2);
-      }, wait);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "네트워크 오류");
-      setBusy(false);
-      setStepIdx(0);
-    }
-  }, [brief]);
+      }
+    },
+    [activeJobId, pollJob, startGenerate, stopPolling],
+  );
 
   const handleNext = () => {
     if (!canNext) return;
     if (stepIdx === 0) {
-      runGenerate();
+      startGenerate();
       return;
     }
     setStepIdx((i) => Math.min(STEPS.length - 1, i + 1));
   };
 
-  const handleEdit = () => setStepIdx(0);
+  const handleEdit = () => {
+    cancelledRef.current = true;
+    stopPolling();
+    setStepIdx(0);
+  };
   const handleRestart = () => {
-    setBrief(DEFAULT_BRIEF);
+    cancelledRef.current = true;
+    stopPolling();
+    setRequest(DEFAULT_REQUEST);
     setResult(null);
+    setActiveJobId(null);
+    setAgentTrace([]);
     setStepIdx(0);
   };
 
@@ -113,15 +226,15 @@ export function WizardShell() {
                 icon={ClipboardList}
                 eyebrow="STEP 1"
                 title="가게 정보를 알려주세요"
-                subtitle="가게 이름과 업종은 필수예요. 입력값을 바탕으로 카드 이미지와 문구를 함께 만들어 드려요."
+                subtitle="가게 이름, 업종, 분위기, 홍보 상세 내용을 입력하면 카드 한 장과 SNS 캡션을 만들어 드려요."
               />
-              <StoreForm value={brief} onChange={setBrief} />
+              <StoreForm value={request} onChange={setRequest} />
               <Footer
                 onPrev={undefined}
                 onNext={handleNext}
                 disabledNext={!canNext}
                 nextLabel="다음 — 홍보물 만들기"
-                hint={!canNext ? "가게 이름과 업종을 입력해 주세요" : undefined}
+                hint={!canNext ? "가게명, 업종, 분위기, 홍보 상세 내용을 입력해 주세요" : undefined}
               />
             </StepFrame>
           )}
@@ -130,7 +243,7 @@ export function WizardShell() {
             <StepFrame key="processing" wide>
               <ProcessingStep
                 startedAt={processingStartedAt}
-                done={processingDone}
+                agentTrace={agentTrace}
               />
             </StepFrame>
           )}
@@ -140,7 +253,7 @@ export function WizardShell() {
               <ResultStep
                 result={result}
                 busy={busy}
-                onRegenerate={runGenerate}
+                onRegenerate={(fb) => startRetry(fb)}
                 onEdit={handleEdit}
                 onRestart={handleRestart}
               />

@@ -7,66 +7,80 @@ export type Purpose =
 
 export type Tone = "warm" | "trendy" | "premium" | "playful" | "calm";
 
-export type CardTemplateId =
-  | "headline-strip"
-  | "polaroid-stack"
-  | "magazine-cut"
-  | "ticker-tape";
+export type Platform = "instagram" | "naver" | "baemin";
 
-export interface StoreBrief {
+export type StoreProfile = {
   storeName: string;
   category: string;
+  vibe: string;
+  description?: string;
+};
+
+export type PromotionRequest = {
+  store: StoreProfile;
   purpose: Purpose;
-  tone: Tone;
-  highlight: string;
   detail: string;
-  ctaText?: string;
-  priceText?: string;
-}
+  platform?: Platform;
+  feedback?: string;
+};
 
-export interface CardCopy {
-  headline: string;
-  subheadline: string;
-  bodyLines: string[];
-  badge?: string;
-  hashtags: string[];
-  cta?: string;
-  pricePill?: string;
-}
+export type AgentTrace = {
+  step: string;
+  summary: string;
+};
 
-export interface GeneratedCard {
-  id: string;
-  template: CardTemplateId;
-  copy: CardCopy;
-  paletteId: PaletteId;
-  imageUrl?: string;
-  imageSource?: "gpt-image-2" | "mock";
-  mockBackground?: string;
-}
+export type MockImage = {
+  title: string;
+  palette: string[];
+  motif: string;
+  dataUrl: string;
+};
 
-export interface GenerationResult {
-  id: string;
-  createdAt: string;
-  brief: StoreBrief;
-  cards: GeneratedCard[];
-  source: "solar" | "fallback";
-  imageSource: "gpt-image-2" | "mock";
+export type Verification = {
+  ok: boolean;
+  missing: string[];
+  extracted: {
+    storeName?: string | null;
+    dish?: string | null;
+    benefit?: string | null;
+    koreanText?: string[];
+  };
+  attempted: number;
+  skipped?: boolean;
   notes?: string;
-}
+};
 
-export type PaletteId =
-  | "cream-coral"
-  | "mint-navy"
-  | "butter-tomato"
-  | "sand-charcoal"
-  | "sky-rose";
+export type SolarCopy = {
+  copyText: string;
+  hashtags: string[];
+  imagePrompt: string;
+  tone: string;
+  source: "solar" | "fallback";
+};
 
-export interface Palette {
-  id: PaletteId;
-  label: string;
-  bg: string;
-  fg: string;
-  accent: string;
-  pill: string;
-  pillFg: string;
-}
+export type GeneratedContent = {
+  id: string;
+  request: PromotionRequest;
+  copyText: string;
+  hashtags: string[];
+  imagePrompt: string;
+  mockImage: MockImage;
+  agentTrace: AgentTrace[];
+  source: "solar" | "fallback";
+  verification?: Verification;
+  imageSource: "azure" | "mock";
+  createdAt: string;
+};
+
+export type JobStatus = "pending" | "processing" | "done" | "error";
+
+export type JobRecord = {
+  id: string;
+  status: JobStatus;
+  request: PromotionRequest;
+  agentTrace: AgentTrace[];
+  result?: GeneratedContent;
+  error?: string;
+  startedAt: string;
+  updatedAt: string;
+};
