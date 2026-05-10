@@ -20,8 +20,6 @@ export function LandingCTA() {
         </motion.h2>
         <p className="max-w-md text-base text-muted-foreground">
           1분이면 인스타에 올릴 카드 한 장과 SNS 캡션이 손에 들어옵니다.
-          텍스트는 Upstage Solar 로, 이미지는 Azure GPT-Image-2 (키 미설정 시
-          mock)로 만들어 드려요.
         </p>
         <Button
           asChild
