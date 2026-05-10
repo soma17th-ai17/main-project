@@ -13,14 +13,19 @@ export async function imageGenerator(state: PromotionStateType) {
     };
   }
 
-  const result = await generateAzureImage(state.copy.imagePrompt);
+  const productImage = state.request.productImage;
+  const result = await generateAzureImage(state.copy.imagePrompt, {
+    productImage,
+  });
   if (result) {
     return {
       image: { dataUrl: result.dataUrl, source: "azure" as const },
       agentTrace: [
         {
           step: "ImageGenerator",
-          summary: "카드 이미지를 만들었어요.",
+          summary: productImage
+            ? "올려주신 제품 사진을 참고해 카드 이미지를 만들었어요."
+            : "카드 이미지를 만들었어요.",
         },
       ],
     };

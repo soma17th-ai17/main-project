@@ -1,6 +1,9 @@
 "use client";
 
-import { useId } from "react";
+import { useId, useRef } from "react";
+import { ImagePlus, X } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -12,6 +15,23 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { Platform, PromotionRequest, Purpose } from "@/lib/types";
+
+const PRODUCT_IMAGE_MAX_BYTES = 6 * 1024 * 1024;
+const PRODUCT_IMAGE_ACCEPT = "image/png,image/jpeg,image/webp";
+const PRODUCT_IMAGE_ALLOWED_MIMES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error("read error"));
+    reader.readAsDataURL(file);
+  });
+}
 
 const PURPOSE_OPTIONS: { value: Purpose; label: string; helper: string }[] = [
   { value: "new-menu", label: "신메뉴 / 신상품", helper: "오늘 새로 올라온 메뉴 알리기" },
@@ -49,7 +69,10 @@ export function StoreForm({ value, onChange }: StoreFormProps) {
     purpose: useId(),
     detail: useId(),
     platform: useId(),
+    productImage: useId(),
   };
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const updateStore = <K extends keyof PromotionRequest["store"]>(
     key: K,
@@ -58,6 +81,33 @@ export function StoreForm({ value, onChange }: StoreFormProps) {
 
   const updateRoot = <K extends keyof PromotionRequest>(key: K, v: PromotionRequest[K]) =>
     onChange({ ...value, [key]: v });
+
+  const handlePickProductImage = async (file: File | undefined) => {
+    if (!file) return;
+    if (!PRODUCT_IMAGE_ALLOWED_MIMES.has(file.type)) {
+      toast.error("PNG, JPEG, WebP 파일만 사용할 수 있어요.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    if (file.size > PRODUCT_IMAGE_MAX_BYTES) {
+      toast.error("사진은 6MB 이하로 올려주세요.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      updateRoot("productImage", dataUrl);
+    } catch {
+      toast.error("사진을 읽지 못했어요. 다른 파일로 다시 시도해주세요.");
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const clearProductImage = () => {
+    updateRoot("productImage", undefined);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   return (
     <div className="grid gap-5">
@@ -155,6 +205,61 @@ export function StoreForm({ value, onChange }: StoreFormProps) {
         <p className="text-right text-xs text-muted-foreground">
           {value.detail.length}/300
         </p>
+      </div>
+
+      <div className="grid gap-2">
+        <Label htmlFor={ids.productImage}>제품 사진 (선택)</Label>
+        <input
+          ref={fileInputRef}
+          id={ids.productImage}
+          type="file"
+          accept={PRODUCT_IMAGE_ACCEPT}
+          className="sr-only"
+          onChange={(e) => handlePickProductImage(e.target.files?.[0])}
+        />
+        {value.productImage ? (
+          <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-muted/30 p-3">
+            <img
+              src={value.productImage}
+              alt="제품 사진 미리보기"
+              className="size-20 shrink-0 rounded-xl object-cover"
+            />
+            <div className="flex flex-1 flex-col gap-1">
+              <p className="text-sm font-medium">제품 사진을 첨부했어요</p>
+              <p className="text-xs text-muted-foreground">
+                AI가 이 사진을 참고해 카드 이미지를 만들어요.
+              </p>
+              <div className="mt-1 flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <ImagePlus className="mr-1 size-3.5" /> 다른 사진
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearProductImage}
+                >
+                  <X className="mr-1 size-3.5" /> 제거
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-border/80 bg-muted/20 px-4 py-6 text-sm text-muted-foreground transition hover:border-brand-blue-strong hover:bg-brand-blue-soft/30 hover:text-brand-blue-strong"
+          >
+            <ImagePlus className="size-5" />
+            <span className="font-medium">제품 사진 올리기</span>
+            <span className="text-xs">PNG / JPG / WebP · 6MB 이하</span>
+          </button>
+        )}
       </div>
 
       <div className="grid gap-5 sm:grid-cols-2">

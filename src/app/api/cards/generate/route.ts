@@ -17,6 +17,15 @@ const purposeEnum = z.enum([
 
 const platformEnum = z.enum(["instagram", "naver", "baemin"]);
 
+const PRODUCT_IMAGE_MAX_CHARS = 8 * 1024 * 1024;
+const productImageDataUrl = /^data:image\/(png|jpeg|jpg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+
+const productImageSchema = z
+  .string()
+  .max(PRODUCT_IMAGE_MAX_CHARS, "사진이 너무 큽니다. 6MB 이하로 올려주세요.")
+  .regex(productImageDataUrl, "PNG/JPEG/WebP 형식의 사진만 사용할 수 있어요.")
+  .optional();
+
 const requestSchema = z.object({
   store: z.object({
     storeName: z.string().trim().min(1, "상호명을 입력해주세요."),
@@ -28,6 +37,7 @@ const requestSchema = z.object({
   detail: z.string().trim().min(1, "홍보 상세 내용을 입력해주세요."),
   platform: platformEnum.optional(),
   feedback: z.string().trim().optional(),
+  productImage: productImageSchema,
 });
 
 export async function POST(request: Request) {

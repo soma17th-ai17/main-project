@@ -22,6 +22,7 @@ export type PromotionRequest = {
   detail: string;
   platform?: Platform;
   feedback?: string;
+  productImage?: string;
 };
 
 export type AgentTrace = {
