@@ -1,3 +1,4 @@
+import { generateAzureImage } from "./image-gen";
 import { createMockImage } from "./mock-image";
 import { generateSolarCopy } from "./solar";
 import type { GeneratedContent, PromotionRequest } from "./types";
@@ -10,7 +11,12 @@ const purposeLabels = {
 
 export async function createGeneratedContent(request: PromotionRequest): Promise<GeneratedContent> {
   const copy = await generateSolarCopy(request);
+  const azureImage = await generateAzureImage(copy.imagePrompt);
   const mockImage = createMockImage(request, copy.imagePrompt);
+  const finalImage = azureImage ? { ...mockImage, dataUrl: azureImage.dataUrl } : mockImage;
+  const imageStepSummary = azureImage
+    ? "Azure gpt-image-2가 1024x1024 PNG 시안을 생성했습니다."
+    : "이미지 API 호출이 비활성/실패하여 mock 시안으로 대체했습니다.";
 
   return {
     id: crypto.randomUUID(),
@@ -18,7 +24,7 @@ export async function createGeneratedContent(request: PromotionRequest): Promise
     copyText: copy.copyText,
     hashtags: copy.hashtags,
     imagePrompt: copy.imagePrompt,
-    mockImage,
+    mockImage: finalImage,
     source: copy.source,
     createdAt: new Date().toISOString(),
     agentTrace: [
@@ -36,7 +42,7 @@ export async function createGeneratedContent(request: PromotionRequest): Promise
       },
       {
         step: "Image",
-        summary: "실제 이미지 API가 미정이므로 mock 이미지를 생성했습니다."
+        summary: imageStepSummary
       },
       {
         step: "Review",
