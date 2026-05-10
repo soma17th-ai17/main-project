@@ -8,7 +8,7 @@ export async function runPromotionJob(
   jobId: string,
   request: PromotionRequest,
 ): Promise<void> {
-  patchJob(jobId, { status: "processing", agentTrace: [] });
+  await patchJob(jobId, { status: "processing", agentTrace: [] });
 
   try {
     let lastState: PromotionStateType | undefined;
@@ -18,7 +18,7 @@ export async function runPromotionJob(
       { streamMode: "values" },
     )) {
       lastState = chunk as PromotionStateType;
-      patchJob(jobId, {
+      await patchJob(jobId, {
         agentTrace: lastState.agentTrace ?? [],
       });
     }
@@ -45,13 +45,13 @@ export async function runPromotionJob(
       agentTrace: lastState.agentTrace ?? [],
     };
 
-    patchJob(jobId, {
+    await patchJob(jobId, {
       status: "done",
       result,
       agentTrace: result.agentTrace,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    patchJob(jobId, { status: "error", error: message });
+    await patchJob(jobId, { status: "error", error: message });
   }
 }

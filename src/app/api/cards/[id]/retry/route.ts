@@ -11,7 +11,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params;
-  const existing = getJob(id);
+  const existing = await getJob(id);
   if (!existing) {
     return NextResponse.json(
       { error: "재생성할 작업을 찾을 수 없습니다." },
@@ -41,7 +41,7 @@ export async function POST(
     startedAt: now,
     updatedAt: now,
   };
-  setJob(job);
+  await setJob(job);
 
   after(async () => {
     await runPromotionJob(newId, newRequest);

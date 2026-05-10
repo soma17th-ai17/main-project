@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     startedAt: now,
     updatedAt: now,
   };
-  setJob(job);
+  await setJob(job);
 
   after(async () => {
     await runPromotionJob(id, body);
