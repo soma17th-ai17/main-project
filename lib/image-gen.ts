@@ -53,13 +53,13 @@ export async function generateAzureImage(prompt: string): Promise<GeneratedAzure
   const body = JSON.stringify({
     prompt,
     size: "1024x1024",
-    quality: "low",
+    quality: "medium",
     output_format: "png",
     n: 1
   });
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 90000);
+  const timeout = setTimeout(() => controller.abort(), 180000);
 
   try {
     let response = await callAzureOnce(url, body, controller.signal);
