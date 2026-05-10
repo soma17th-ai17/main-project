@@ -20,6 +20,7 @@ export async function createGeneratedContent(request: PromotionRequest): Promise
     imagePrompt: finalState.copy.imagePrompt,
     mockImage: { ...mockMeta, dataUrl: imageDataUrl },
     source: finalState.copy.source,
+    verification: finalState.verification,
     createdAt: new Date().toISOString(),
     agentTrace: finalState.agentTrace
   };

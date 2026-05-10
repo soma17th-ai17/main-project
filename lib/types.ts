@@ -28,6 +28,20 @@ export type MockImage = {
   dataUrl: string;
 };
 
+export type Verification = {
+  ok: boolean;
+  missing: string[];
+  extracted: {
+    storeName?: string | null;
+    dish?: string | null;
+    benefit?: string | null;
+    koreanText?: string[];
+  };
+  attempted: number;
+  skipped?: boolean;
+  notes?: string;
+};
+
 export type GeneratedContent = {
   id: string;
   request: PromotionRequest;
@@ -37,6 +51,7 @@ export type GeneratedContent = {
   mockImage: MockImage;
   agentTrace: AgentTrace[];
   source: "solar" | "fallback";
+  verification?: Verification;
   createdAt: string;
 };
 
