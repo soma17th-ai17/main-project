@@ -19,8 +19,8 @@ export function LandingCTA() {
           오늘 한 끼, 카드뉴스로 알려보세요.
         </motion.h2>
         <p className="max-w-md text-base text-muted-foreground">
-          5분이면 인스타에 올릴 카드 4장이 손에 들어옵니다. 데모 단계라
-          이미지는 mock 으로 동작해요.
+          5분이면 인스타에 올릴 카드 4장이 손에 들어옵니다. 텍스트는 Upstage
+          Solar 로, 이미지는 GPT 이미지(키 미설정 시 mock)로 만들어 드려요.
         </p>
         <Button
           asChild

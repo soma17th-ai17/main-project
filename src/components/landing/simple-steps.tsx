@@ -1,29 +1,23 @@
 "use client";
 
 import { motion } from "motion/react";
-import { Camera, ClipboardList, Sparkles, Download } from "lucide-react";
+import { ClipboardList, Sparkles, Download } from "lucide-react";
 
 const steps = [
   {
     n: "1",
-    icon: Camera,
-    title: "사진을 올려요",
-    body: "음식, 매장, 이벤트 사진을 올려주세요. 한 장이면 충분합니다.",
-  },
-  {
-    n: "2",
     icon: ClipboardList,
     title: "가게 정보를 적어요",
     body: "가게 이름, 업종, 홍보 목적, 원하는 분위기를 골라주세요.",
   },
   {
-    n: "3",
+    n: "2",
     icon: Sparkles,
     title: "AI가 만들어요",
-    body: "카드뉴스, 홍보 문구, 해시태그를 한 번에 만들어 드려요.",
+    body: "입력한 정보를 바탕으로 카드 이미지, 홍보 문구, 해시태그를 한 번에 만들어 드려요.",
   },
   {
-    n: "4",
+    n: "3",
     icon: Download,
     title: "저장해서 올려요",
     body: "마음에 드는 카드를 PNG로 저장해서 인스타에 바로 올리세요.",
@@ -42,14 +36,14 @@ export function SimpleSteps() {
             만드는 법
           </p>
           <h2 className="text-balance mt-3 font-display text-3xl font-extrabold tracking-tight sm:text-4xl">
-            네 단계면 끝나요.
+            세 단계면 끝나요.
           </h2>
           <p className="mx-auto mt-4 max-w-md text-base text-muted-foreground">
-            복잡한 디자인 도구 없이, 휴대폰 사진 한 장이면 충분해요.
+            복잡한 디자인 도구 없이, 가게 정보만 있으면 충분해요.
           </p>
         </div>
 
-        <ol className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <ol className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {steps.map((s, i) => (
             <motion.li
               key={s.n}

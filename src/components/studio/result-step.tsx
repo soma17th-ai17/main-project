@@ -8,11 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { CardsGallery } from "./cards-gallery";
-import type { GenerationResult, UploadedPhoto } from "@/lib/types";
+import type { GenerationResult } from "@/lib/types";
 
 interface ResultStepProps {
   result: GenerationResult;
-  photos: UploadedPhoto[];
   busy: boolean;
   onRegenerate: () => void;
   onEdit: () => void;
@@ -37,7 +36,6 @@ function buildCaption(result: GenerationResult): string {
 
 export function ResultStep({
   result,
-  photos,
   busy,
   onRegenerate,
   onEdit,
@@ -117,15 +115,20 @@ export function ResultStep({
           <h3 className="font-display text-lg font-bold tracking-tight">
             카드뉴스 4컷
           </h3>
-          <Badge variant="outline" className="rounded-full">
-            {result.source === "solar" ? "Solar 카피" : "fallback 카피"}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="rounded-full">
+              {result.source === "solar" ? "Solar 카피" : "fallback 카피"}
+            </Badge>
+            <Badge variant="outline" className="rounded-full">
+              {result.imageSource === "gpt-image-2" ? "GPT 이미지" : "mock 이미지"}
+            </Badge>
+          </div>
         </div>
         <CardsGallery
           cards={result.cards}
-          photos={photos}
           storeName={result.brief.storeName}
           source={result.source}
+          imageSource={result.imageSource}
           notes={result.notes}
           onRegenerate={onRegenerate}
           busy={busy}
@@ -176,8 +179,7 @@ export function ResultStep({
           </Button>
         </div>
         <p className="text-center text-xs text-muted-foreground">
-          이미지 생성은 외부 API 미정으로 mock 입니다 · 텍스트는 Solar 키 미설정 시
-          fallback 문구로 동작해요
+          이미지는 OPENAI_API_KEY 미설정 시 mock 으로 동작해요 · 텍스트는 Upstage Solar 로 생성합니다 (키 미설정 시 fallback 문구)
         </p>
       </div>
     </motion.div>

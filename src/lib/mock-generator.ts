@@ -65,7 +65,6 @@ interface CardSlotInput {
   index: number;
   brief: StoreBrief;
   rnd: () => number;
-  photoIds: string[];
 }
 
 function buildCopyFor({
@@ -133,14 +132,12 @@ function buildCopyFor({
 
 export interface MockGenerationInput {
   brief: StoreBrief;
-  photoIds: string[];
   count?: number;
   seed?: string;
 }
 
 export function generateMockCards({
   brief,
-  photoIds,
   count = 4,
   seed,
 }: MockGenerationInput): GeneratedCard[] {
@@ -152,16 +149,13 @@ export function generateMockCards({
   return Array.from({ length: count }, (_, i) => {
     const template = TEMPLATES[i % TEMPLATES.length];
     const palette = PALETTE_IDS[(i + Math.floor(rnd() * PALETTE_IDS.length)) % PALETTE_IDS.length];
-    const photoId = photoIds.length ? photoIds[i % photoIds.length] : undefined;
     return {
       id: `card-${i + 1}`,
       template,
       paletteId: palette,
-      copy: buildCopyFor({ index: i, brief, rnd, photoIds }),
-      photoId,
-      mockBackground: photoId
-        ? undefined
-        : `mock://${brief.purpose}/${brief.tone}/${i}`,
+      copy: buildCopyFor({ index: i, brief, rnd }),
+      imageSource: "mock",
+      mockBackground: `mock://${brief.purpose}/${brief.tone}/${i}`,
     } satisfies GeneratedCard;
   });
 }

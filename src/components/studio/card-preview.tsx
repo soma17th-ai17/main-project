@@ -3,11 +3,10 @@
 import { forwardRef, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { PALETTES } from "@/lib/templates";
-import type { GeneratedCard, UploadedPhoto } from "@/lib/types";
+import type { GeneratedCard } from "@/lib/types";
 
 interface CardPreviewProps {
   card: GeneratedCard;
-  photo?: UploadedPhoto;
   storeName: string;
   size?: number;
   className?: string;
@@ -28,7 +27,7 @@ const PATTERN_SVG = (color: string) =>
   )}`;
 
 export const CardPreview = forwardRef<HTMLDivElement, CardPreviewProps>(
-  function CardPreview({ card, photo, storeName, size = 540, className }, ref) {
+  function CardPreview({ card, storeName, size = 540, className }, ref) {
     const palette = PALETTES[card.paletteId];
     const innerStyle = useMemo(
       () => ({
@@ -52,7 +51,6 @@ export const CardPreview = forwardRef<HTMLDivElement, CardPreviewProps>(
       >
         <Layout
           card={card}
-          photo={photo}
           palette={palette}
           storeName={storeName}
           size={size}
@@ -64,7 +62,6 @@ export const CardPreview = forwardRef<HTMLDivElement, CardPreviewProps>(
 
 interface LayoutProps {
   card: GeneratedCard;
-  photo?: UploadedPhoto;
   palette: (typeof PALETTES)[keyof typeof PALETTES];
   storeName: string;
   size: number;
@@ -85,17 +82,17 @@ function Layout(props: LayoutProps) {
 }
 
 function PhotoArea({
-  photo,
+  imageUrl,
   accent,
   rounded = false,
   className,
 }: {
-  photo?: UploadedPhoto;
+  imageUrl?: string;
   accent: string;
   rounded?: boolean;
   className?: string;
 }) {
-  if (photo) {
+  if (imageUrl) {
     return (
       <div
         className={cn(
@@ -106,7 +103,7 @@ function PhotoArea({
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={photo.dataUrl}
+          src={imageUrl}
           alt=""
           crossOrigin="anonymous"
           className="h-full w-full object-cover"
@@ -168,7 +165,7 @@ function Pill({
   );
 }
 
-function HeadlineStrip({ card, photo, palette, storeName, size }: LayoutProps) {
+function HeadlineStrip({ card, palette, storeName, size }: LayoutProps) {
   const px = (n: number) => `${(n / 540) * size}px`;
   return (
     <div className="grid h-full w-full grid-rows-[auto_1fr] gap-0">
@@ -203,7 +200,7 @@ function HeadlineStrip({ card, photo, palette, storeName, size }: LayoutProps) {
         </Pill>
       </header>
       <div className="relative">
-        <PhotoArea photo={photo} accent={palette.accent} />
+        <PhotoArea imageUrl={card.imageUrl} accent={palette.accent} />
         <div
           className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3"
           style={{ padding: px(20) }}
@@ -240,7 +237,7 @@ function HeadlineStrip({ card, photo, palette, storeName, size }: LayoutProps) {
   );
 }
 
-function PolaroidStack({ card, photo, palette, storeName, size }: LayoutProps) {
+function PolaroidStack({ card, palette, storeName, size }: LayoutProps) {
   const px = (n: number) => `${(n / 540) * size}px`;
   return (
     <div className="relative h-full w-full" style={{ padding: px(24) }}>
@@ -278,13 +275,13 @@ function PolaroidStack({ card, photo, palette, storeName, size }: LayoutProps) {
             className="absolute left-0 top-0 h-[78%] w-[58%] -rotate-3 rounded-2xl border-[6px] border-white shadow-[0_20px_30px_-20px_rgba(0,0,0,0.4)]"
             style={{ background: palette.bg }}
           >
-            <PhotoArea photo={photo} accent={palette.accent} rounded />
+            <PhotoArea imageUrl={card.imageUrl} accent={palette.accent} rounded />
           </div>
           <div
             className="absolute bottom-0 right-0 h-[68%] w-[52%] rotate-[5deg] rounded-2xl border-[6px] border-white shadow-[0_20px_30px_-20px_rgba(0,0,0,0.4)]"
             style={{ background: palette.bg }}
           >
-            <PhotoArea photo={photo} accent={palette.accent} rounded />
+            <PhotoArea imageUrl={card.imageUrl} accent={palette.accent} rounded />
           </div>
         </div>
 
@@ -313,12 +310,12 @@ function PolaroidStack({ card, photo, palette, storeName, size }: LayoutProps) {
   );
 }
 
-function MagazineCut({ card, photo, palette, storeName, size }: LayoutProps) {
+function MagazineCut({ card, palette, storeName, size }: LayoutProps) {
   const px = (n: number) => `${(n / 540) * size}px`;
   return (
     <div className="grid h-full w-full grid-cols-2 overflow-hidden">
       <div className="relative">
-        <PhotoArea photo={photo} accent={palette.accent} />
+        <PhotoArea imageUrl={card.imageUrl} accent={palette.accent} />
         <div
           className="absolute inset-x-0 bottom-0"
           style={{
@@ -386,7 +383,7 @@ function MagazineCut({ card, photo, palette, storeName, size }: LayoutProps) {
   );
 }
 
-function TickerTape({ card, photo, palette, storeName, size }: LayoutProps) {
+function TickerTape({ card, palette, storeName, size }: LayoutProps) {
   const px = (n: number) => `${(n / 540) * size}px`;
   const tickerText = `${card.copy.pricePill || "오늘만"} · ${card.copy.headline} · ${storeName} · `;
   return (
@@ -408,7 +405,7 @@ function TickerTape({ card, photo, palette, storeName, size }: LayoutProps) {
         </p>
       </div>
       <div className="relative">
-        <PhotoArea photo={photo} accent={palette.accent} />
+        <PhotoArea imageUrl={card.imageUrl} accent={palette.accent} />
         <div
           className="absolute inset-0 flex flex-col justify-end"
           style={{

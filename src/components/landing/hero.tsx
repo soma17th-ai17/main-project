@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { motion } from "motion/react";
-import { Camera, ArrowRight } from "lucide-react";
+import { Sparkles, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function Hero() {
@@ -33,7 +33,7 @@ export function Hero() {
           transition={{ duration: 0.55, delay: 0.05 }}
           className="text-balance mt-6 font-display text-[40px] font-extrabold leading-[1.1] tracking-tight text-foreground sm:text-6xl"
         >
-          사진 한 장이면,
+          가게 정보만 입력하면,
           <br />
           홍보물이 완성돼요.
         </motion.h1>
@@ -44,8 +44,8 @@ export function Hero() {
           transition={{ duration: 0.5, delay: 0.15 }}
           className="mt-5 max-w-md text-base leading-relaxed text-muted-foreground sm:max-w-lg sm:text-lg"
         >
-          음식 사진을 올리고 가게 정보만 입력하면, 인스타에 바로 올릴 수 있는
-          카드뉴스, 홍보 문구, 해시태그까지 한 번에 만들어 드려요.
+          가게 이름과 업종, 홍보 목적만 알려 주시면 인스타에 바로 올릴 수 있는
+          카드뉴스 이미지와 홍보 문구, 해시태그까지 AI가 한 번에 만들어 드려요.
         </motion.p>
 
         <motion.div
@@ -60,8 +60,8 @@ export function Hero() {
             className="group h-16 rounded-2xl px-8 text-lg font-bold sm:h-[68px] sm:text-xl"
           >
             <Link href="/studio">
-              <Camera className="size-6" />
-              사진으로 홍보물 만들기
+              <Sparkles className="size-6" />
+              지금 홍보물 만들기
               <ArrowRight className="ml-1 size-5 transition-transform group-hover:translate-x-0.5" />
             </Link>
           </Button>

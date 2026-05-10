@@ -13,14 +13,6 @@ export type CardTemplateId =
   | "magazine-cut"
   | "ticker-tape";
 
-export interface UploadedPhoto {
-  id: string;
-  dataUrl: string;
-  name: string;
-  width: number;
-  height: number;
-}
-
 export interface StoreBrief {
   storeName: string;
   category: string;
@@ -47,7 +39,8 @@ export interface GeneratedCard {
   template: CardTemplateId;
   copy: CardCopy;
   paletteId: PaletteId;
-  photoId?: string;
+  imageUrl?: string;
+  imageSource?: "gpt-image-2" | "mock";
   mockBackground?: string;
 }
 
@@ -57,6 +50,7 @@ export interface GenerationResult {
   brief: StoreBrief;
   cards: GeneratedCard[];
   source: "solar" | "fallback";
+  imageSource: "gpt-image-2" | "mock";
   notes?: string;
 }
 

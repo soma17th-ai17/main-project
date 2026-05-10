@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { generateMockCards } from "@/lib/mock-generator";
 import { refineCardsWithSolar } from "@/lib/solar";
+import { generateCardImages } from "@/lib/image-gen";
 import type { GenerationResult } from "@/lib/types";
 
 const PURPOSE = ["new-menu", "event", "daily", "reopening", "review"] as const;
@@ -20,7 +21,6 @@ const briefSchema = z.object({
 
 const payloadSchema = z.object({
   brief: briefSchema,
-  photoIds: z.array(z.string()).max(8).default([]),
   count: z.number().int().min(1).max(6).default(4),
   seed: z.string().optional(),
 });
@@ -51,16 +51,20 @@ export async function POST(req: Request) {
     );
   }
 
-  const { brief, photoIds, count, seed } = parsed.data;
-  const baseCards = generateMockCards({ brief, photoIds, count, seed });
-  const { cards, source, notes } = await refineCardsWithSolar(brief, baseCards);
+  const { brief, count, seed } = parsed.data;
+  const baseCards = generateMockCards({ brief, count, seed });
+  const { cards: copyCards, source: copySource, notes: copyNotes } = await refineCardsWithSolar(brief, baseCards);
+  const { cards: finalCards, source: imageSource, notes: imageNotes } = await generateCardImages({ brief, cards: copyCards });
+
+  const notes = [copyNotes, imageNotes].filter(Boolean).join(" · ") || undefined;
 
   const result: GenerationResult = {
     id: `gen-${Date.now().toString(36)}`,
     createdAt: new Date().toISOString(),
     brief,
-    cards,
-    source,
+    cards: finalCards,
+    source: copySource,
+    imageSource,
     notes,
   };
 

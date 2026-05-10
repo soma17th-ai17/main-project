@@ -9,13 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CardPreview } from "./card-preview";
 import { TEMPLATES } from "@/lib/templates";
-import type { GeneratedCard, UploadedPhoto } from "@/lib/types";
+import type { GeneratedCard } from "@/lib/types";
 
 interface CardsGalleryProps {
   cards: GeneratedCard[];
-  photos: UploadedPhoto[];
   storeName: string;
   source: "solar" | "fallback" | null;
+  imageSource: "gpt-image-2" | "mock";
   notes?: string;
   onRegenerate: () => void;
   busy: boolean;
@@ -23,17 +23,15 @@ interface CardsGalleryProps {
 
 export function CardsGallery({
   cards,
-  photos,
   storeName,
   source,
+  imageSource,
   notes,
   onRegenerate,
   busy,
 }: CardsGalleryProps) {
   const [downloading, setDownloading] = useState<string | null>(null);
   const refs = useRef<Record<string, HTMLDivElement | null>>({});
-
-  const photoMap = new Map(photos.map((p) => [p.id, p]));
 
   const handleDownload = useCallback(
     async (card: GeneratedCard) => {
@@ -87,7 +85,7 @@ export function CardsGallery({
             {source === "solar" ? "Solar 카피" : "fallback 카피"}
           </Badge>
           <Badge variant="outline" className="rounded-full">
-            mock 이미지
+            {imageSource === "gpt-image-2" ? "GPT 이미지" : "mock 이미지"}
           </Badge>
           {notes && (
             <span className="text-xs text-muted-foreground">{notes}</span>
@@ -123,7 +121,6 @@ export function CardsGallery({
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <AnimatePresence initial={false}>
           {cards.map((card, i) => {
-            const photo = card.photoId ? photoMap.get(card.photoId) : undefined;
             const tpl = TEMPLATES.find((t) => t.id === card.template);
             return (
               <motion.div
@@ -165,7 +162,6 @@ export function CardsGallery({
                       refs.current[card.id] = el;
                     }}
                     card={card}
-                    photo={photo}
                     storeName={storeName}
                     size={460}
                   />

@@ -7,14 +7,12 @@ import { ArrowLeft, ArrowRight, ImagePlus, ClipboardList } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { StepProgress, type StepDef } from "./step-progress";
-import { UploadZone } from "./upload-zone";
 import { StoreForm } from "./store-form";
 import { ProcessingStep } from "./processing-step";
 import { ResultStep } from "./result-step";
-import type { GenerationResult, StoreBrief, UploadedPhoto } from "@/lib/types";
+import type { GenerationResult, StoreBrief } from "@/lib/types";
 
 const STEPS: StepDef[] = [
-  { key: "upload", label: "사진 올리기", short: "사진" },
   { key: "info", label: "가게 정보", short: "정보" },
   { key: "processing", label: "AI 작업", short: "작업" },
   { key: "result", label: "결과 확인", short: "결과" },
@@ -35,7 +33,6 @@ const PROCESSING_MIN_MS = 2400;
 
 export function WizardShell() {
   const [stepIdx, setStepIdx] = useState(0);
-  const [photos, setPhotos] = useState<UploadedPhoto[]>([]);
   const [brief, setBrief] = useState<StoreBrief>(DEFAULT_BRIEF);
   const [result, setResult] = useState<GenerationResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -43,20 +40,17 @@ export function WizardShell() {
   const [processingDone, setProcessingDone] = useState(false);
 
   const canNext = useMemo(() => {
-    if (stepIdx === 0) return photos.length > 0;
-    if (stepIdx === 1) {
+    if (stepIdx === 0) {
       return brief.storeName.trim().length > 0 && brief.category.trim().length > 0;
     }
     return true;
-  }, [stepIdx, photos.length, brief]);
-
-  const goPrev = () => setStepIdx((i) => Math.max(0, i - 1));
+  }, [stepIdx, brief]);
 
   const runGenerate = useCallback(async () => {
     setBusy(true);
     setProcessingDone(false);
     setProcessingStartedAt(Date.now());
-    setStepIdx(2);
+    setStepIdx(1);
 
     const startedAt = Date.now();
     try {
@@ -65,7 +59,6 @@ export function WizardShell() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           brief,
-          photoIds: photos.map((p) => p.id),
           count: 4,
         }),
       });
@@ -74,7 +67,7 @@ export function WizardShell() {
         const message = data?.error || `생성 실패 (HTTP ${res.status})`;
         toast.error(message);
         setBusy(false);
-        setStepIdx(1);
+        setStepIdx(0);
         return;
       }
       const elapsed = Date.now() - startedAt;
@@ -83,27 +76,26 @@ export function WizardShell() {
         setProcessingDone(true);
         setResult(data.result as GenerationResult);
         setBusy(false);
-        setStepIdx(3);
+        setStepIdx(2);
       }, wait);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "네트워크 오류");
       setBusy(false);
-      setStepIdx(1);
+      setStepIdx(0);
     }
-  }, [brief, photos]);
+  }, [brief]);
 
   const handleNext = () => {
     if (!canNext) return;
-    if (stepIdx === 1) {
+    if (stepIdx === 0) {
       runGenerate();
       return;
     }
     setStepIdx((i) => Math.min(STEPS.length - 1, i + 1));
   };
 
-  const handleEdit = () => setStepIdx(1);
+  const handleEdit = () => setStepIdx(0);
   const handleRestart = () => {
-    setPhotos([]);
     setBrief(DEFAULT_BRIEF);
     setResult(null);
     setStepIdx(0);
@@ -116,48 +108,25 @@ export function WizardShell() {
       <div className="relative">
         <AnimatePresence mode="wait">
           {stepIdx === 0 && (
-            <StepFrame key="upload">
+            <StepFrame key="info">
               <StepHeader
-                icon={ImagePlus}
+                icon={ClipboardList}
                 eyebrow="STEP 1"
-                title="홍보할 사진을 올려주세요"
-                subtitle="음식, 매장, 이벤트 사진 어떤 것이든 좋아요. 한 장이면 충분해요."
+                title="가게 정보를 알려주세요"
+                subtitle="가게 이름과 업종은 필수예요. 입력값을 바탕으로 카드 이미지와 문구를 함께 만들어 드려요."
               />
-              <UploadZone photos={photos} onChange={setPhotos} />
+              <StoreForm value={brief} onChange={setBrief} />
               <Footer
                 onPrev={undefined}
                 onNext={handleNext}
                 disabledNext={!canNext}
-                nextLabel="다음 — 가게 정보 입력"
-                hint={photos.length === 0 ? "사진을 1장 이상 올려주세요" : undefined}
+                nextLabel="다음 — 홍보물 만들기"
+                hint={!canNext ? "가게 이름과 업종을 입력해 주세요" : undefined}
               />
             </StepFrame>
           )}
 
           {stepIdx === 1 && (
-            <StepFrame key="info">
-              <StepHeader
-                icon={ClipboardList}
-                eyebrow="STEP 2"
-                title="가게 정보를 알려주세요"
-                subtitle="가게 이름과 업종은 필수예요. 나머지는 비워두셔도 괜찮습니다."
-              />
-              <StoreForm value={brief} onChange={setBrief} />
-              <Footer
-                onPrev={goPrev}
-                onNext={handleNext}
-                disabledNext={!canNext}
-                nextLabel="다음 — 홍보물 만들기"
-                hint={
-                  !canNext
-                    ? "가게 이름과 업종을 입력해 주세요"
-                    : undefined
-                }
-              />
-            </StepFrame>
-          )}
-
-          {stepIdx === 2 && (
             <StepFrame key="processing" wide>
               <ProcessingStep
                 startedAt={processingStartedAt}
@@ -166,11 +135,10 @@ export function WizardShell() {
             </StepFrame>
           )}
 
-          {stepIdx === 3 && result && (
+          {stepIdx === 2 && result && (
             <StepFrame key="result" wide>
               <ResultStep
                 result={result}
-                photos={photos}
                 busy={busy}
                 onRegenerate={runGenerate}
                 onEdit={handleEdit}
@@ -286,4 +254,3 @@ function Footer({ onPrev, onNext, disabledNext, nextLabel, hint }: FooterProps) 
     </div>
   );
 }
-
