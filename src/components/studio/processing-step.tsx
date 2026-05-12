@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
-import { Sparkles, Check, Loader2 } from "lucide-react";
+import { Sparkles, Check, Loader2, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import type { AgentTrace } from "@/lib/types";
 
 const STEP_ORDER = [
@@ -18,6 +19,7 @@ interface ProcessingStepProps {
   startedAt: number;
   agentTrace: AgentTrace[];
   attempt?: number;
+  onCancel?: () => void;
 }
 
 function elapsedLabel(ms: number): string {
@@ -28,7 +30,7 @@ function elapsedLabel(ms: number): string {
   return `${m}분 ${r}초 경과`;
 }
 
-export function ProcessingStep({ startedAt, agentTrace, attempt }: ProcessingStepProps) {
+export function ProcessingStep({ startedAt, agentTrace, attempt, onCancel }: ProcessingStepProps) {
   const [now, setNow] = useState<number>(0);
   const rafRef = useRef<number | null>(null);
 
@@ -134,6 +136,18 @@ export function ProcessingStep({ startedAt, agentTrace, attempt }: ProcessingSte
         })}
       </ol>
 
+      {onCancel && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="lg"
+          onClick={onCancel}
+          className="h-12 rounded-2xl px-5 text-sm font-medium text-muted-foreground hover:text-foreground"
+        >
+          <X className="mr-1 size-4" />
+          취소하고 정보 수정하기
+        </Button>
+      )}
     </div>
   );
 }

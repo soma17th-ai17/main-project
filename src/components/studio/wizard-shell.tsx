@@ -90,6 +90,7 @@ export function WizardShell() {
             throw new Error(data?.error || `조회 실패 (HTTP ${res.status})`);
           }
           const job = (await res.json()) as JobRecord;
+          if (cancelledRef.current) return;
           setAgentTrace(job.agentTrace ?? []);
 
           if (job.status === "done" && job.result) {
@@ -108,6 +109,7 @@ export function WizardShell() {
           }
           pollTimerRef.current = setTimeout(tick, POLL_INTERVAL_MS);
         } catch (err) {
+          if (cancelledRef.current) return;
           stopPolling();
           toast.error(err instanceof Error ? err.message : "조회 오류");
           setBusy(false);
@@ -199,6 +201,20 @@ export function WizardShell() {
     setStepIdx((i) => Math.min(STEPS.length - 1, i + 1));
   };
 
+  // Cancel while generation is in progress.
+  // Stops the 5s polling loop, marks the running job as ignored client-side,
+  // and returns to step 1 with the form state intact (request stays in React
+  // state so the user does not re-enter anything). Backend job keeps running
+  // server-side until completion or natural timeout — that is acceptable.
+  const handleCancelProcessing = useCallback(() => {
+    cancelledRef.current = true;
+    stopPolling();
+    setBusy(false);
+    setAgentTrace([]);
+    setStepIdx(0);
+    toast("생성을 취소했어요. 정보를 수정한 뒤 다시 시도해 주세요.");
+  }, [stopPolling]);
+
   const handleEdit = () => {
     cancelledRef.current = true;
     stopPolling();
@@ -244,6 +260,7 @@ export function WizardShell() {
               <ProcessingStep
                 startedAt={processingStartedAt}
                 agentTrace={agentTrace}
+                onCancel={busy ? handleCancelProcessing : undefined}
               />
             </StepFrame>
           )}

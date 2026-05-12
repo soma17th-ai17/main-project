@@ -16,6 +16,12 @@ const DEFAULT_API_VERSION = "2025-04-01-preview";
 
 const PRODUCT_IMAGE_DATA_URL = /^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/;
 
+// Azure OpenAI image deployments typically take 30-60s for gpt-image-2 at
+// medium quality. 90s gives one retry window before the user-visible timeout
+// at the wizard layer (~5min total). Going higher (180s) just makes failures
+// feel hung; the upstream pipeline already falls back to a mock on null.
+const AZURE_TIMEOUT_MS = 90000;
+
 export function isAzureImageConfigured() {
   return Boolean(
     process.env.AZURE_IMAGE_ENDPOINT &&
@@ -31,27 +37,46 @@ function buildEndpointUrl(path: "generations" | "edits") {
   return `${endpoint}/openai/deployments/${deployment}/images/${path}?api-version=${apiVersion}`;
 }
 
-async function callAzureJson(url: string, body: string, signal: AbortSignal) {
-  return fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.AZURE_IMAGE_API_KEY}`,
-    },
-    body,
-    signal,
-  });
+// Azure OpenAI accepts the raw key in `api-key:`. `Authorization: Bearer …` is
+// reserved for AAD/Entra JWT tokens — sending an API key as Bearer makes the
+// gateway hang until client timeout.
+//
+// Each call gets its own AbortController so a retry after a 429 has its own
+// full timeout budget instead of inheriting the original budget minus
+// previous attempt + sleep time.
+async function callAzureJson(url: string, body: string): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), AZURE_TIMEOUT_MS);
+  try {
+    return await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "api-key": process.env.AZURE_IMAGE_API_KEY!,
+      },
+      body,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
-async function callAzureMultipart(url: string, form: FormData, signal: AbortSignal) {
-  return fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.AZURE_IMAGE_API_KEY}`,
-    },
-    body: form,
-    signal,
-  });
+async function callAzureMultipart(url: string, form: FormData): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), AZURE_TIMEOUT_MS);
+  try {
+    return await fetch(url, {
+      method: "POST",
+      headers: {
+        "api-key": process.env.AZURE_IMAGE_API_KEY!,
+      },
+      body: form,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function parseRetryAfter(headerValue: string | null, bodyText: string): number {
@@ -88,6 +113,18 @@ async function readB64FromResponse(response: Response): Promise<string | null> {
   return data.data?.[0]?.b64_json ?? null;
 }
 
+async function logBadResponse(kind: "generations" | "edits", response: Response) {
+  let preview = "";
+  try {
+    preview = (await response.text()).slice(0, 300);
+  } catch {
+    preview = "<no body>";
+  }
+  console.error(
+    `[azure-image] ${kind} HTTP ${response.status} ${response.statusText}: ${preview}`,
+  );
+}
+
 async function generateFromText(prompt: string): Promise<GeneratedAzureImage | null> {
   const url = buildEndpointUrl("generations");
   const body = JSON.stringify({
@@ -98,29 +135,33 @@ async function generateFromText(prompt: string): Promise<GeneratedAzureImage | n
     n: 1,
   });
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 180000);
-
   try {
-    let response = await callAzureJson(url, body, controller.signal);
+    let response = await callAzureJson(url, body);
 
     if (response.status === 429) {
       const text = await response.text();
       const wait = parseRetryAfter(response.headers.get("retry-after"), text);
+      console.error(`[azure-image] generations 429 — retrying after ${wait}s`);
       await new Promise((resolve) => setTimeout(resolve, wait * 1000));
-      response = await callAzureJson(url, body, controller.signal);
+      response = await callAzureJson(url, body);
     }
 
-    if (!response.ok) return null;
+    if (!response.ok) {
+      await logBadResponse("generations", response);
+      return null;
+    }
 
     const b64 = await readB64FromResponse(response);
-    if (!b64) return null;
+    if (!b64) {
+      console.error("[azure-image] generations ok but no b64_json in response");
+      return null;
+    }
 
     return { dataUrl: `data:image/png;base64,${b64}`, source: "azure" };
-  } catch {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[azure-image] generations threw: ${message}`);
     return null;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -144,29 +185,33 @@ async function editFromReference(
     return form;
   };
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 180000);
-
   try {
-    let response = await callAzureMultipart(url, buildForm(), controller.signal);
+    let response = await callAzureMultipart(url, buildForm());
 
     if (response.status === 429) {
       const text = await response.text();
       const wait = parseRetryAfter(response.headers.get("retry-after"), text);
+      console.error(`[azure-image] edits 429 — retrying after ${wait}s`);
       await new Promise((resolve) => setTimeout(resolve, wait * 1000));
-      response = await callAzureMultipart(url, buildForm(), controller.signal);
+      response = await callAzureMultipart(url, buildForm());
     }
 
-    if (!response.ok) return null;
+    if (!response.ok) {
+      await logBadResponse("edits", response);
+      return null;
+    }
 
     const b64 = await readB64FromResponse(response);
-    if (!b64) return null;
+    if (!b64) {
+      console.error("[azure-image] edits ok but no b64_json in response");
+      return null;
+    }
 
     return { dataUrl: `data:image/png;base64,${b64}`, source: "azure" };
-  } catch {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[azure-image] edits threw: ${message}`);
     return null;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 

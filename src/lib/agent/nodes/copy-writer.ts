@@ -2,8 +2,21 @@ import { generateSolarCopy } from "../../solar";
 import type { PromotionRequest } from "../../types";
 import type { PromotionStateType } from "../state";
 
+// Wrap the user's feedback with a clear high-priority marker so the Solar
+// system prompt rule "feedback is a HIGH-PRIORITY override" lands deterministically.
+// Without this, short feedback like "더 발랄하게" easily gets diluted by the
+// surrounding tone/category fields and prior-attempt assumptions.
+function decorateUserFeedback(raw: string): string {
+  return [
+    "[USER FEEDBACK — HIGH PRIORITY OVERRIDE]",
+    raw,
+    "Apply the above as the dominant instruction. It overrides any earlier assumption about tone, audience, key message, hashtag direction, or image scene whenever there is a conflict.",
+  ].join("\n");
+}
+
 function buildRetryFeedback(state: PromotionStateType): string | undefined {
-  const baseFeedback = state.request.feedback?.trim();
+  const baseFeedbackRaw = state.request.feedback?.trim();
+  const baseFeedback = baseFeedbackRaw ? decorateUserFeedback(baseFeedbackRaw) : undefined;
   const missing = state.verification?.missing ?? [];
   if (missing.length === 0) {
     return baseFeedback;
