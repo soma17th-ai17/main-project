@@ -71,7 +71,7 @@ export type ImageFailure = {
   reason: ImageFailureReason;
   // Korean user-facing message.
   message: string;
-  // Short technical chip (e.g. "HTTP 503", "Azure 과부하", "90초 초과"). Safe to display.
+  // Short technical chip (e.g. "HTTP 503", "Azure 과부하", "300초 초과"). Safe to display.
   shortLabel: string;
   // Optional technical detail (truncated). Not for user display.
   detail?: string;

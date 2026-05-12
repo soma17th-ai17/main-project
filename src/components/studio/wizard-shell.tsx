@@ -37,7 +37,7 @@ const DEFAULT_REQUEST: PromotionRequest = {
 };
 
 const POLL_INTERVAL_MS = 5000;
-const POLL_MAX_MS = 5 * 60 * 1000;
+const POLL_MAX_MS = 7 * 60 * 1000;
 
 // Browser-side counterpart to server-side pipelineLog. Same line format so
 // developers can grep dev-tools console + Vercel logs together.

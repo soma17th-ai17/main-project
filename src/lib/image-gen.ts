@@ -28,9 +28,9 @@ const DEFAULT_API_VERSION = "2025-04-01-preview";
 const PRODUCT_IMAGE_DATA_URL = /^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/;
 
 // Azure OpenAI gpt-image-2 at "medium" quality typically returns in 30-60s.
-// 90s gives one full attempt + headroom; per-call (not per-pipeline) so the
+// 300s (5분) gives headroom for slow Azure responses; per-call (not per-pipeline) so the
 // 429 retry path has its own budget instead of inheriting a shared deadline.
-const AZURE_TIMEOUT_MS = 90000;
+const AZURE_TIMEOUT_MS = 300000;
 
 export function isAzureImageConfigured() {
   return Boolean(

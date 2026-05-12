@@ -5,7 +5,7 @@ import { setJob } from "@/lib/store";
 import type { JobRecord, PromotionRequest } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+export const maxDuration = 360;
 
 const purposeEnum = z.enum([
   "new-menu",
