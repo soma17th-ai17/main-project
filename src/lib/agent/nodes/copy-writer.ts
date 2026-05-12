@@ -1,4 +1,5 @@
 import { generateSolarCopy } from "../../solar";
+import { pipelineLog, nowMs, elapsedMs } from "../../pipeline-log";
 import type { PromotionRequest } from "../../types";
 import type { PromotionStateType } from "../state";
 
@@ -31,7 +32,23 @@ export async function copyWriter(state: PromotionStateType) {
     ? { ...state.request, feedback: retryFeedback }
     : state.request;
 
+  const start = nowMs();
+  const attempt = (state.attempt ?? 0) + 1;
+  pipelineLog("copy", "start", state.jobId, {
+    attempt,
+    has_feedback: Boolean(state.request.feedback?.trim()),
+  });
+
   const copy = await generateSolarCopy(requestForRun);
+
+  pipelineLog("copy", "done", state.jobId, {
+    attempt,
+    elapsed_ms: elapsedMs(start),
+    source: copy.source,
+    copy_chars: copy.copyText.length,
+    hashtags: copy.hashtags.length,
+  });
+
   const isRetry = (state.attempt ?? 0) > 0;
   const baseSummary = `홍보 문구 ${copy.copyText.length}자와 해시태그 ${copy.hashtags.length}개를 작성했어요.`;
   const summary = isRetry ? `${baseSummary} (피드백을 반영해 다시 작성)` : baseSummary;
@@ -39,6 +56,7 @@ export async function copyWriter(state: PromotionStateType) {
   return {
     copy,
     image: undefined,
+    imageFailure: undefined,
     agentTrace: [{ step: "CopyWriter", summary }],
   };
 }

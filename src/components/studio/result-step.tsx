@@ -12,6 +12,7 @@ import {
   Download,
   ShieldCheck,
   ShieldAlert,
+  ImageOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -58,7 +59,8 @@ export function ResultStep({
   };
 
   const handleDownload = () => {
-    const url = result.mockImage.dataUrl;
+    if (!result.image) return;
+    const url = result.image.dataUrl;
     const a = document.createElement("a");
     a.href = url;
     a.download = `${result.request.store.storeName || "promo"}.png`;
@@ -68,6 +70,7 @@ export function ResultStep({
   };
 
   const verification = result.verification;
+  const imageFailed = !result.image || Boolean(result.imageFailure);
 
   return (
     <motion.div
@@ -79,45 +82,74 @@ export function ResultStep({
       <header className="flex flex-col gap-3 text-center sm:text-left">
         <div className="inline-flex items-center justify-center gap-2 self-center rounded-full bg-brand-blue-soft px-3 py-1 text-xs font-semibold text-brand-blue-strong sm:self-start">
           <Sparkles className="size-3.5" />
-          완성됐어요
+          {imageFailed ? "문구는 완성됐어요" : "완성됐어요"}
         </div>
         <h2 className="font-display text-3xl font-extrabold tracking-tight sm:text-4xl">
           {result.request.store.storeName}님의 홍보물입니다.
         </h2>
         <p className="text-base text-muted-foreground">
-          이미지 한 장과 SNS 캡션을 함께 만들어 드렸어요. 마음에 들지 않으면
-          피드백을 적고 다시 생성하세요.
+          {imageFailed
+            ? "홍보 문구는 만들어졌지만 이미지 생성에 실패했어요. 잠시 후 다시 시도해 주세요."
+            : "이미지 한 장과 SNS 캡션을 함께 만들어 드렸어요. 마음에 들지 않으면 피드백을 적고 다시 생성하세요."}
         </p>
       </header>
 
       <section className="overflow-hidden rounded-3xl border border-border/70 bg-card toss-shadow">
-        <div className="relative aspect-square w-full bg-muted">
-          <Image
-            src={result.mockImage.dataUrl}
-            alt={`${result.request.store.storeName} 홍보 이미지`}
-            fill
-            sizes="(min-width: 768px) 600px, 100vw"
-            className="object-cover"
-            unoptimized
-          />
-        </div>
+        {imageFailed ? (
+          <div className="relative flex aspect-square w-full flex-col items-center justify-center gap-4 bg-muted/40 px-6 text-center">
+            <div className="grid size-16 place-items-center rounded-2xl bg-destructive/10 text-destructive">
+              <ImageOff className="size-8" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-base font-semibold text-foreground">
+                이미지 생성에 실패했습니다.
+              </p>
+              <p className="max-w-xs text-sm text-muted-foreground">
+                {result.imageFailure?.message ??
+                  "잠시 후 다시 시도해 주세요."}
+              </p>
+            </div>
+            {result.imageFailure?.shortLabel && (
+              <Badge variant="outline" className="rounded-full">
+                {result.imageFailure.shortLabel}
+              </Badge>
+            )}
+          </div>
+        ) : (
+          <div className="relative aspect-square w-full bg-muted">
+            <Image
+              src={result.image!.dataUrl}
+              alt={`${result.request.store.storeName} 홍보 이미지`}
+              fill
+              sizes="(min-width: 768px) 600px, 100vw"
+              className="object-cover"
+              unoptimized
+            />
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 px-5 py-3 text-xs text-muted-foreground">
           <div className="flex items-center gap-2">
-            {verification && !verification.skipped && (
-              <Badge
-                variant={verification.ok ? "default" : "destructive"}
-                className="rounded-full"
-              >
-                {verification.ok ? (
-                  <>
-                    <ShieldCheck className="mr-1 size-3" /> 내용 확인 완료
-                  </>
-                ) : (
-                  <>
-                    <ShieldAlert className="mr-1 size-3" /> 누락 항목 있음
-                  </>
-                )}
+            {imageFailed ? (
+              <Badge variant="destructive" className="rounded-full">
+                <ShieldAlert className="mr-1 size-3" /> 이미지 실패
               </Badge>
+            ) : (
+              verification && !verification.skipped && (
+                <Badge
+                  variant={verification.ok ? "default" : "destructive"}
+                  className="rounded-full"
+                >
+                  {verification.ok ? (
+                    <>
+                      <ShieldCheck className="mr-1 size-3" /> 내용 확인 완료
+                    </>
+                  ) : (
+                    <>
+                      <ShieldAlert className="mr-1 size-3" /> 누락 항목 있음
+                    </>
+                  )}
+                </Badge>
+              )
             )}
           </div>
           <Button
@@ -125,6 +157,7 @@ export function ResultStep({
             variant="outline"
             size="sm"
             onClick={handleDownload}
+            disabled={imageFailed}
             className="rounded-full"
           >
             <Download className="mr-1.5 size-4" /> 이미지 저장
@@ -132,7 +165,7 @@ export function ResultStep({
         </div>
       </section>
 
-      {verification && !verification.skipped && verification.missing.length > 0 && (
+      {!imageFailed && verification && !verification.skipped && verification.missing.length > 0 && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <p className="font-semibold">검증에서 누락된 키워드</p>
           <p className="mt-1">{verification.missing.join(", ")}</p>
@@ -187,15 +220,17 @@ export function ResultStep({
 
       <section className="rounded-3xl border border-border/70 bg-card p-6 toss-shadow sm:p-8">
         <h3 className="font-display text-lg font-bold tracking-tight">
-          피드백을 주고 다시 만들기
+          {imageFailed ? "다시 시도" : "피드백을 주고 다시 만들기"}
         </h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          예) &ldquo;더 따뜻하게&rdquo;, &ldquo;할인 금액을 강조해줘&rdquo;, &ldquo;이모지 줄여줘&rdquo;
+          {imageFailed
+            ? "이미지 생성이 다시 시도되며, 입력한 피드백은 문구·이미지에 함께 반영됩니다."
+            : "예) “더 따뜻하게”, “할인 금액을 강조해줘”, “이모지 줄여줘”"}
         </p>
         <textarea
           value={feedback}
           onChange={(e) => setFeedback(e.target.value)}
-          placeholder="수정이 필요한 점을 적어주세요"
+          placeholder={imageFailed ? "추가 피드백 (선택 사항)" : "수정이 필요한 점을 적어주세요"}
           maxLength={200}
           rows={3}
           className="mt-3 w-full rounded-2xl border border-border/60 bg-background p-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/40"
@@ -209,7 +244,11 @@ export function ResultStep({
           className="mt-3 h-12 w-full rounded-2xl text-base font-semibold"
         >
           <RotateCcw className="mr-1.5 size-4" />
-          {busy ? "다시 만드는 중..." : "피드백 반영해서 다시 만들기"}
+          {busy
+            ? "다시 만드는 중..."
+            : imageFailed
+              ? "이미지 다시 생성하기"
+              : "피드백 반영해서 다시 만들기"}
         </Button>
       </section>
 

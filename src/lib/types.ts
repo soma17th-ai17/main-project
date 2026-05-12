@@ -59,17 +59,47 @@ export type SolarCopy = {
   source: "solar" | "fallback";
 };
 
+export type ImageFailureReason =
+  | "azure-not-configured"
+  | "azure-timeout"
+  | "azure-429-overload"
+  | "azure-http-error"
+  | "azure-empty-response"
+  | "azure-network-error";
+
+export type ImageFailure = {
+  reason: ImageFailureReason;
+  // Korean user-facing message.
+  message: string;
+  // Short technical chip (e.g. "HTTP 503", "Azure 과부하", "90초 초과"). Safe to display.
+  shortLabel: string;
+  // Optional technical detail (truncated). Not for user display.
+  detail?: string;
+  occurredAt: string;
+};
+
+export type GeneratedImage = {
+  dataUrl: string;
+  palette: string[];
+  title: string;
+  motif: string;
+};
+
 export type GeneratedContent = {
   id: string;
   request: PromotionRequest;
   copyText: string;
   hashtags: string[];
   imagePrompt: string;
-  mockImage: MockImage;
+  // Present when Azure produced a real image. When undefined, imageFailure
+  // describes why. We no longer auto-substitute a mock SVG so the UI can
+  // surface failure explicitly instead of silently swapping in a fake visual.
+  image?: GeneratedImage;
+  imageFailure?: ImageFailure;
+  imageSource: "azure" | "failed";
   agentTrace: AgentTrace[];
   source: "solar" | "fallback";
   verification?: Verification;
-  imageSource: "azure" | "mock";
   createdAt: string;
 };
 

@@ -16,10 +16,13 @@ export async function imageGenerator(state: PromotionStateType) {
   const productImage = state.request.productImage;
   const result = await generateAzureImage(state.copy.imagePrompt, {
     productImage,
+    jobId: state.jobId,
   });
-  if (result) {
+
+  if (result.kind === "ok") {
     return {
       image: { dataUrl: result.dataUrl, source: "azure" as const },
+      imageFailure: undefined,
       agentTrace: [
         {
           step: "ImageGenerator",
@@ -32,10 +35,12 @@ export async function imageGenerator(state: PromotionStateType) {
   }
 
   return {
+    image: undefined,
+    imageFailure: result.failure,
     agentTrace: [
       {
         step: "ImageGenerator",
-        summary: "이미지 생성에 실패해 임시 디자인으로 대체했어요.",
+        summary: `이미지 생성에 실패했어요 (${result.failure.shortLabel}).`,
       },
     ],
   };

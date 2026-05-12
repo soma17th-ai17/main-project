@@ -1,6 +1,7 @@
 import { Annotation } from "@langchain/langgraph";
 import type {
   AgentTrace,
+  ImageFailure,
   PromotionRequest,
   SolarCopy,
   Verification,
@@ -8,13 +9,15 @@ import type {
 
 export type ImageResult = {
   dataUrl: string;
-  source: "azure" | "mock";
+  source: "azure";
 };
 
 export const PromotionState = Annotation.Root({
+  jobId: Annotation<string | undefined>(),
   request: Annotation<PromotionRequest>(),
   copy: Annotation<SolarCopy | undefined>(),
   image: Annotation<ImageResult | undefined>(),
+  imageFailure: Annotation<ImageFailure | undefined>(),
   verification: Annotation<Verification | undefined>(),
   attempt: Annotation<number>({
     reducer: (_left, right) => right,

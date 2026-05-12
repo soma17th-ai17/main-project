@@ -1,10 +1,16 @@
 import { verifyImage } from "../../verify";
+import { pipelineLog, nowMs, elapsedMs } from "../../pipeline-log";
 import type { PromotionStateType } from "../state";
 
 export async function verifier(state: PromotionStateType) {
   const attempt = (state.attempt ?? 0) + 1;
+  const start = nowMs();
 
   if (!state.image || state.image.source !== "azure") {
+    pipelineLog("verify", "skip", state.jobId, {
+      attempt,
+      reason: state.image ? "non-azure-source" : "no-image",
+    });
     return {
       attempt,
       verification: {
@@ -13,18 +19,25 @@ export async function verifier(state: PromotionStateType) {
         extracted: {},
         attempted: attempt,
         skipped: true,
-        notes: "임시 이미지라 확인을 건너뛰었어요.",
+        notes: "이미지가 없어 확인을 건너뛰었어요.",
       },
       agentTrace: [
         {
           step: "Verifier",
-          summary: "임시 이미지라 확인을 건너뛰었어요.",
+          summary: "이미지가 없어 확인을 건너뛰었어요.",
         },
       ],
     };
   }
 
+  pipelineLog("verify", "start", state.jobId, { attempt });
   const verification = await verifyImage(state.image.dataUrl, state.request, attempt);
+  pipelineLog("verify", verification.skipped ? "skip" : "done", state.jobId, {
+    attempt,
+    elapsed_ms: elapsedMs(start),
+    ok: verification.ok,
+    missing: verification.missing.length,
+  });
 
   let summary: string;
   if (verification.skipped) {

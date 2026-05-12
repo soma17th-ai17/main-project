@@ -39,6 +39,25 @@ const DEFAULT_REQUEST: PromotionRequest = {
 const POLL_INTERVAL_MS = 5000;
 const POLL_MAX_MS = 5 * 60 * 1000;
 
+// Browser-side counterpart to server-side pipelineLog. Same line format so
+// developers can grep dev-tools console + Vercel logs together.
+function clientLog(
+  stage: "poll" | "request",
+  status: "start" | "done" | "fail" | "cancel" | "accepted",
+  jobId: string | undefined,
+  fields: Record<string, string | number | boolean | undefined> = {},
+) {
+  const ts = new Date().toISOString();
+  const tail = Object.entries(fields)
+    .filter(([, v]) => v !== undefined)
+    .map(([k, v]) => `${k}=${typeof v === "string" && /\s/.test(v) ? `"${v}"` : v}`)
+    .join(" ");
+  const head = `[${ts}] [pipeline] stage=${stage} status=${status} job=${jobId ?? "-"}`;
+  const line = tail ? `${head} ${tail}` : head;
+  if (status === "fail") console.error(line);
+  else console.log(line);
+}
+
 export function WizardShell() {
   const [stepIdx, setStepIdx] = useState(0);
   const [request, setRequest] = useState<PromotionRequest>(DEFAULT_REQUEST);
@@ -74,10 +93,18 @@ export function WizardShell() {
   const pollJob = useCallback(
     (jobId: string, startedAt: number) => {
       const startTime = Date.now();
+      clientLog("poll", "start", jobId);
 
       const tick = async () => {
-        if (cancelledRef.current) return;
+        if (cancelledRef.current) {
+          clientLog("poll", "cancel", jobId, { elapsed_ms: Date.now() - startTime });
+          return;
+        }
         if (Date.now() - startTime > POLL_MAX_MS) {
+          clientLog("poll", "fail", jobId, {
+            reason: "client-timeout",
+            elapsed_ms: Date.now() - startTime,
+          });
           toast.error("응답이 너무 오래 걸려요. 잠시 후 다시 시도해주세요.");
           setBusy(false);
           setStepIdx(0);
@@ -90,11 +117,19 @@ export function WizardShell() {
             throw new Error(data?.error || `조회 실패 (HTTP ${res.status})`);
           }
           const job = (await res.json()) as JobRecord;
-          if (cancelledRef.current) return;
+          if (cancelledRef.current) {
+            clientLog("poll", "cancel", jobId, { elapsed_ms: Date.now() - startTime });
+            return;
+          }
           setAgentTrace(job.agentTrace ?? []);
 
           if (job.status === "done" && job.result) {
             stopPolling();
+            clientLog("poll", "done", jobId, {
+              elapsed_ms: Date.now() - startTime,
+              image_source: job.result.imageSource,
+              failure_reason: job.result.imageFailure?.reason,
+            });
             setResult(job.result);
             setBusy(false);
             setStepIdx(2);
@@ -102,6 +137,11 @@ export function WizardShell() {
           }
           if (job.status === "error") {
             stopPolling();
+            clientLog("poll", "fail", jobId, {
+              reason: "job-error",
+              elapsed_ms: Date.now() - startTime,
+              error: job.error,
+            });
             toast.error(job.error || "생성 중 오류가 발생했어요.");
             setBusy(false);
             setStepIdx(0);
@@ -111,6 +151,11 @@ export function WizardShell() {
         } catch (err) {
           if (cancelledRef.current) return;
           stopPolling();
+          clientLog("poll", "fail", jobId, {
+            reason: "fetch-error",
+            elapsed_ms: Date.now() - startTime,
+            error: err instanceof Error ? err.message : String(err),
+          });
           toast.error(err instanceof Error ? err.message : "조회 오류");
           setBusy(false);
           setStepIdx(0);
@@ -209,11 +254,12 @@ export function WizardShell() {
   const handleCancelProcessing = useCallback(() => {
     cancelledRef.current = true;
     stopPolling();
+    clientLog("poll", "cancel", activeJobId ?? undefined, { triggered_by: "user" });
     setBusy(false);
     setAgentTrace([]);
     setStepIdx(0);
     toast("생성을 취소했어요. 정보를 수정한 뒤 다시 시도해 주세요.");
-  }, [stopPolling]);
+  }, [stopPolling, activeJobId]);
 
   const handleEdit = () => {
     cancelledRef.current = true;
