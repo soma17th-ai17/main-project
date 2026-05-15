@@ -31,7 +31,7 @@ export async function verifier(state: PromotionStateType) {
   }
 
   pipelineLog("verify", "start", state.jobId, { attempt });
-  const verification = await verifyImage(state.image.dataUrl, state.request, attempt);
+  const verification = await verifyImage(state.image.dataUrl, state.request, attempt, state.jobId);
   pipelineLog("verify", verification.skipped ? "skip" : "done", state.jobId, {
     attempt,
     elapsed_ms: elapsedMs(start),
