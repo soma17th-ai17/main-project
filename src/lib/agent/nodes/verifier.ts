@@ -6,10 +6,10 @@ export async function verifier(state: PromotionStateType) {
   const attempt = (state.attempt ?? 0) + 1;
   const start = nowMs();
 
-  if (!state.image || state.image.source !== "azure") {
+  if (!state.image || state.image.source !== "openai") {
     pipelineLog("verify", "skip", state.jobId, {
       attempt,
-      reason: state.image ? "non-azure-source" : "no-image",
+      reason: state.image ? "non-openai-source" : "no-image",
     });
     return {
       attempt,

@@ -1,100 +1,138 @@
 import { pipelineLog, nowMs, elapsedMs } from "./pipeline-log";
 import type { ImageFailure } from "./types";
 
-type AzureImageResponse = {
+type OpenAIImageResponse = {
   data?: Array<{ b64_json?: string; url?: string }>;
   error?: { message?: string };
 };
 
-export type AzureImageOk = {
+type TimedOpenAIResponse = {
+  response: Response;
+  clearTimeout: () => void;
+};
+
+export type OpenAIImageOk = {
   kind: "ok";
   dataUrl: string;
 };
 
-export type AzureImageFail = {
+export type OpenAIImageFail = {
   kind: "fail";
   failure: ImageFailure;
 };
 
-export type AzureImageResult = AzureImageOk | AzureImageFail;
+export type OpenAIImageResult = OpenAIImageOk | OpenAIImageFail;
 
-export type AzureImageOptions = {
+export type OpenAIImageOptions = {
   productImage?: string;
   jobId?: string;
 };
 
-const DEFAULT_API_VERSION = "2025-04-01-preview";
+const DEFAULT_OPENAI_IMAGE_MODEL = "gpt-image-2";
 
 const PRODUCT_IMAGE_DATA_URL = /^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/;
 
-// Azure OpenAI gpt-image-2 at "medium" quality typically returns in 30-60s.
-// 300s (5분) gives headroom for slow Azure responses; per-call (not per-pipeline) so the
+// OpenAI gpt-image-2 at "medium" quality can be slow during heavy load.
+// 300s (5분) gives headroom for slow responses; per-call (not per-pipeline) so the
 // 429 retry path has its own budget instead of inheriting a shared deadline.
-const AZURE_TIMEOUT_MS = 300000;
+const OPENAI_TIMEOUT_MS = 300000;
+// Respect explicit Retry-After guidance, but keep enough budget for the
+// one retried image call under the route's 300s+ execution window.
+const RETRY_AFTER_CAP_SECONDS = 90;
 
-export function isAzureImageConfigured() {
-  return Boolean(
-    process.env.AZURE_IMAGE_ENDPOINT &&
-      process.env.AZURE_IMAGE_DEPLOYMENT &&
-      process.env.AZURE_IMAGE_API_KEY,
-  );
+class OpenAIConfigError extends Error {
+  constructor() {
+    super("OPENAI_API_KEY is not configured.");
+    this.name = "OpenAIConfigError";
+  }
+}
+
+export function isOpenAIImageConfigured() {
+  return Boolean(process.env.OPENAI_API_KEY);
 }
 
 function buildEndpointUrl(path: "generations" | "edits") {
-  const endpoint = process.env.AZURE_IMAGE_ENDPOINT!.replace(/\/$/, "");
-  const deployment = process.env.AZURE_IMAGE_DEPLOYMENT!;
-  const apiVersion = process.env.AZURE_IMAGE_API_VERSION ?? DEFAULT_API_VERSION;
-  return `${endpoint}/openai/deployments/${deployment}/images/${path}?api-version=${apiVersion}`;
+  return `https://api.openai.com/v1/images/${path}`;
 }
 
-// Azure OpenAI accepts the raw key via `api-key:`. `Authorization: Bearer …`
-// is reserved for AAD/Entra JWT tokens — sending an API key as Bearer makes
-// the gateway hang. Each call gets its own AbortController so a 429-retry has
-// its own full timeout budget.
-async function callAzureJson(url: string, body: string): Promise<Response> {
+function getOpenAIImageModel() {
+  return process.env.OPENAI_IMAGE_MODEL?.trim() || DEFAULT_OPENAI_IMAGE_MODEL;
+}
+
+function getOpenAIApiKey() {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) throw new OpenAIConfigError();
+  return key;
+}
+
+// Each call gets its own AbortController so a 429 retry has its own full
+// timeout budget instead of sharing a stale deadline.
+async function callOpenAIJson(
+  url: string,
+  body: string,
+): Promise<TimedOpenAIResponse> {
+  const apiKey = getOpenAIApiKey();
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), AZURE_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
   try {
-    return await fetch(url, {
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "api-key": process.env.AZURE_IMAGE_API_KEY!,
+        Authorization: `Bearer ${apiKey}`,
       },
       body,
       signal: controller.signal,
     });
-  } finally {
+    return {
+      response,
+      clearTimeout: () => clearTimeout(timeout),
+    };
+  } catch (err) {
     clearTimeout(timeout);
+    throw err;
   }
 }
 
-async function callAzureMultipart(url: string, form: FormData): Promise<Response> {
+async function callOpenAIMultipart(
+  url: string,
+  form: FormData,
+): Promise<TimedOpenAIResponse> {
+  const apiKey = getOpenAIApiKey();
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), AZURE_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
   try {
-    return await fetch(url, {
+    const response = await fetch(url, {
       method: "POST",
       headers: {
-        "api-key": process.env.AZURE_IMAGE_API_KEY!,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: form,
       signal: controller.signal,
     });
-  } finally {
+    return {
+      response,
+      clearTimeout: () => clearTimeout(timeout),
+    };
+  } catch (err) {
     clearTimeout(timeout);
+    throw err;
   }
 }
 
 function parseRetryAfter(headerValue: string | null, bodyText: string): number {
   if (headerValue) {
     const seconds = Number.parseInt(headerValue, 10);
-    if (Number.isFinite(seconds) && seconds > 0) return Math.min(seconds, 30);
+    if (Number.isFinite(seconds) && seconds > 0) {
+      return Math.min(seconds, RETRY_AFTER_CAP_SECONDS);
+    }
   }
   const match = bodyText.match(/retry after (\d+)\s*seconds?/i);
   if (match) {
     const seconds = Number.parseInt(match[1], 10);
-    if (Number.isFinite(seconds) && seconds > 0) return Math.min(seconds, 30);
+    if (Number.isFinite(seconds) && seconds > 0) {
+      return Math.min(seconds, RETRY_AFTER_CAP_SECONDS);
+    }
   }
   return 15;
 }
@@ -115,9 +153,23 @@ function dataUrlToBlob(dataUrl: string): { blob: Blob; filename: string } | null
   }
 }
 
-async function readB64FromResponse(response: Response): Promise<string | null> {
-  const data = (await response.json()) as AzureImageResponse;
-  return data.data?.[0]?.b64_json ?? null;
+async function readTextFromResponse(result: TimedOpenAIResponse): Promise<string> {
+  try {
+    return await result.response.text();
+  } finally {
+    result.clearTimeout();
+  }
+}
+
+async function readB64FromResponse(
+  result: TimedOpenAIResponse,
+): Promise<string | null> {
+  try {
+    const data = (await result.response.json()) as OpenAIImageResponse;
+    return data.data?.[0]?.b64_json ?? null;
+  } finally {
+    result.clearTimeout();
+  }
 }
 
 function makeFailure(
@@ -136,6 +188,15 @@ function makeFailure(
 }
 
 function classifyThrown(err: unknown, elapsed: number): ImageFailure {
+  if (err instanceof OpenAIConfigError) {
+    return makeFailure(
+      "openai-not-configured",
+      "이미지 생성에 필요한 환경 변수가 설정되지 않았어요.",
+      "환경변수 미설정",
+      err.message,
+    );
+  }
+
   // Node's undici raises DOMException with name "AbortError" when our timer
   // fires controller.abort(). Other thrown errors (DNS, socket reset) carry
   // different names. We surface our own timeout vs anything else.
@@ -148,15 +209,15 @@ function classifyThrown(err: unknown, elapsed: number): ImageFailure {
   if (isAbort) {
     const seconds = Math.round(elapsed / 1000);
     return makeFailure(
-      "azure-timeout",
-      `Azure 이미지 응답이 ${seconds}초 안에 오지 않아 중단했어요. 잠시 후 다시 시도해 주세요.`,
+      "openai-timeout",
+      `OpenAI 이미지 응답이 ${seconds}초 안에 오지 않아 중단했어요. 잠시 후 다시 시도해 주세요.`,
       `요청 시간 초과 (${seconds}s)`,
       detail,
     );
   }
   return makeFailure(
-    "azure-network-error",
-    "Azure 이미지 서비스에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.",
+    "openai-network-error",
+    "OpenAI 이미지 서비스에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.",
     "네트워크 오류",
     detail,
   );
@@ -164,15 +225,16 @@ function classifyThrown(err: unknown, elapsed: number): ImageFailure {
 
 async function handleResponse(
   kind: "generations" | "edits",
-  response: Response,
+  result: TimedOpenAIResponse,
   jobId: string | undefined,
   startMs: number,
-): Promise<AzureImageResult> {
+): Promise<OpenAIImageResult> {
+  const { response } = result;
   if (response.status === 429) {
-    const text = await response.text().catch(() => "");
+    const text = await readTextFromResponse(result);
     pipelineLog("image", "fail", jobId, {
       kind,
-      reason: "azure-429-overload",
+      reason: "openai-429-overload",
       http: 429,
       elapsed_ms: elapsedMs(startMs),
       detail: text.slice(0, 160),
@@ -180,19 +242,19 @@ async function handleResponse(
     return {
       kind: "fail",
       failure: makeFailure(
-        "azure-429-overload",
-        "Azure 이미지 서비스가 일시적으로 혼잡합니다. 잠시 후 다시 시도해 주세요.",
-        "Azure 과부하 (429)",
+        "openai-429-overload",
+        "OpenAI 이미지 서비스가 일시적으로 혼잡합니다. 잠시 후 다시 시도해 주세요.",
+        "OpenAI 과부하 (429)",
         text.slice(0, 160),
       ),
     };
   }
 
   if (!response.ok) {
-    const text = await response.text().catch(() => "");
+    const text = await readTextFromResponse(result);
     pipelineLog("image", "fail", jobId, {
       kind,
-      reason: "azure-http-error",
+      reason: "openai-http-error",
       http: response.status,
       elapsed_ms: elapsedMs(startMs),
       detail: text.slice(0, 160),
@@ -200,26 +262,26 @@ async function handleResponse(
     return {
       kind: "fail",
       failure: makeFailure(
-        "azure-http-error",
-        `Azure 이미지 서비스 오류 (HTTP ${response.status}). 잠시 후 다시 시도해 주세요.`,
+        "openai-http-error",
+        `OpenAI 이미지 서비스 오류 (HTTP ${response.status}). 잠시 후 다시 시도해 주세요.`,
         `HTTP ${response.status}`,
         text.slice(0, 160),
       ),
     };
   }
 
-  const b64 = await readB64FromResponse(response);
+  const b64 = await readB64FromResponse(result);
   if (!b64) {
     pipelineLog("image", "fail", jobId, {
       kind,
-      reason: "azure-empty-response",
+      reason: "openai-empty-response",
       elapsed_ms: elapsedMs(startMs),
     });
     return {
       kind: "fail",
       failure: makeFailure(
-        "azure-empty-response",
-        "Azure에서 빈 응답을 받았어요. 다시 시도해 주세요.",
+        "openai-empty-response",
+        "OpenAI에서 빈 응답을 받았어요. 다시 시도해 주세요.",
         "빈 응답",
       ),
     };
@@ -228,7 +290,7 @@ async function handleResponse(
   pipelineLog("image", "done", jobId, {
     kind,
     elapsed_ms: elapsedMs(startMs),
-    source: "azure",
+    source: "openai",
   });
   return { kind: "ok", dataUrl: `data:image/png;base64,${b64}` };
 }
@@ -236,9 +298,10 @@ async function handleResponse(
 async function generateFromText(
   prompt: string,
   jobId: string | undefined,
-): Promise<AzureImageResult> {
+): Promise<OpenAIImageResult> {
   const url = buildEndpointUrl("generations");
   const body = JSON.stringify({
+    model: getOpenAIImageModel(),
     prompt,
     size: "1024x1024",
     quality: "medium",
@@ -247,14 +310,18 @@ async function generateFromText(
   });
 
   const start = nowMs();
-  pipelineLog("image", "start", jobId, { kind: "generations" });
+  pipelineLog("image", "start", jobId, {
+    kind: "generations",
+    model: getOpenAIImageModel(),
+  });
 
   try {
-    let response = await callAzureJson(url, body);
+    let result = await callOpenAIJson(url, body);
 
-    if (response.status === 429) {
-      const text = await response.text();
-      const wait = parseRetryAfter(response.headers.get("retry-after"), text);
+    if (result.response.status === 429) {
+      const retryAfter = result.response.headers.get("retry-after");
+      const text = await readTextFromResponse(result);
+      const wait = parseRetryAfter(retryAfter, text);
       pipelineLog("image", "retry", jobId, {
         kind: "generations",
         reason: "429",
@@ -262,10 +329,10 @@ async function generateFromText(
         elapsed_ms: elapsedMs(start),
       });
       await new Promise((resolve) => setTimeout(resolve, wait * 1000));
-      response = await callAzureJson(url, body);
+      result = await callOpenAIJson(url, body);
     }
 
-    return await handleResponse("generations", response, jobId, start);
+    return await handleResponse("generations", result, jobId, start);
   } catch (err) {
     const elapsed = elapsedMs(start);
     const failure = classifyThrown(err, elapsed);
@@ -283,7 +350,7 @@ async function editFromReference(
   prompt: string,
   productImage: string,
   jobId: string | undefined,
-): Promise<AzureImageResult> {
+): Promise<OpenAIImageResult> {
   const blob = dataUrlToBlob(productImage);
   if (!blob) {
     pipelineLog("image", "fail", jobId, {
@@ -293,7 +360,7 @@ async function editFromReference(
     return {
       kind: "fail",
       failure: makeFailure(
-        "azure-empty-response",
+        "invalid-product-image",
         "올려주신 사진을 읽을 수 없어요. 다른 사진으로 다시 시도해 주세요.",
         "사진 형식 오류",
       ),
@@ -304,6 +371,7 @@ async function editFromReference(
 
   const buildForm = () => {
     const form = new FormData();
+    form.append("model", getOpenAIImageModel());
     form.append("prompt", prompt);
     form.append("n", "1");
     form.append("size", "1024x1024");
@@ -314,14 +382,19 @@ async function editFromReference(
   };
 
   const start = nowMs();
-  pipelineLog("image", "start", jobId, { kind: "edits", has_product_image: true });
+  pipelineLog("image", "start", jobId, {
+    kind: "edits",
+    has_product_image: true,
+    model: getOpenAIImageModel(),
+  });
 
   try {
-    let response = await callAzureMultipart(url, buildForm());
+    let result = await callOpenAIMultipart(url, buildForm());
 
-    if (response.status === 429) {
-      const text = await response.text();
-      const wait = parseRetryAfter(response.headers.get("retry-after"), text);
+    if (result.response.status === 429) {
+      const retryAfter = result.response.headers.get("retry-after");
+      const text = await readTextFromResponse(result);
+      const wait = parseRetryAfter(retryAfter, text);
       pipelineLog("image", "retry", jobId, {
         kind: "edits",
         reason: "429",
@@ -329,10 +402,10 @@ async function editFromReference(
         elapsed_ms: elapsedMs(start),
       });
       await new Promise((resolve) => setTimeout(resolve, wait * 1000));
-      response = await callAzureMultipart(url, buildForm());
+      result = await callOpenAIMultipart(url, buildForm());
     }
 
-    return await handleResponse("edits", response, jobId, start);
+    return await handleResponse("edits", result, jobId, start);
   } catch (err) {
     const elapsed = elapsedMs(start);
     const failure = classifyThrown(err, elapsed);
@@ -346,18 +419,18 @@ async function editFromReference(
   }
 }
 
-export async function generateAzureImage(
+export async function generateOpenAIImage(
   prompt: string,
-  options: AzureImageOptions = {},
-): Promise<AzureImageResult> {
-  if (!isAzureImageConfigured()) {
+  options: OpenAIImageOptions = {},
+): Promise<OpenAIImageResult> {
+  if (!isOpenAIImageConfigured()) {
     pipelineLog("image", "fail", options.jobId, {
-      reason: "azure-not-configured",
+      reason: "openai-not-configured",
     });
     return {
       kind: "fail",
       failure: makeFailure(
-        "azure-not-configured",
+        "openai-not-configured",
         "이미지 생성에 필요한 환경 변수가 설정되지 않았어요.",
         "환경변수 미설정",
       ),

@@ -9,7 +9,7 @@ import type {
 
 export type ImageResult = {
   dataUrl: string;
-  source: "azure";
+  source: "openai";
 };
 
 export const PromotionState = Annotation.Root({

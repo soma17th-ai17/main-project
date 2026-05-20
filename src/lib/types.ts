@@ -60,18 +60,19 @@ export type SolarCopy = {
 };
 
 export type ImageFailureReason =
-  | "azure-not-configured"
-  | "azure-timeout"
-  | "azure-429-overload"
-  | "azure-http-error"
-  | "azure-empty-response"
-  | "azure-network-error";
+  | "openai-not-configured"
+  | "openai-timeout"
+  | "openai-429-overload"
+  | "openai-http-error"
+  | "openai-empty-response"
+  | "openai-network-error"
+  | "invalid-product-image";
 
 export type ImageFailure = {
   reason: ImageFailureReason;
   // Korean user-facing message.
   message: string;
-  // Short technical chip (e.g. "HTTP 503", "Azure 과부하", "300초 초과"). Safe to display.
+  // Short technical chip (e.g. "HTTP 503", "OpenAI 과부하", "300초 초과"). Safe to display.
   shortLabel: string;
   // Optional technical detail (truncated). Not for user display.
   detail?: string;
@@ -91,12 +92,12 @@ export type GeneratedContent = {
   copyText: string;
   hashtags: string[];
   imagePrompt: string;
-  // Present when Azure produced a real image. When undefined, imageFailure
+  // Present when OpenAI produced a real image. When undefined, imageFailure
   // describes why. We no longer auto-substitute a mock SVG so the UI can
   // surface failure explicitly instead of silently swapping in a fake visual.
   image?: GeneratedImage;
   imageFailure?: ImageFailure;
-  imageSource: "azure" | "failed";
+  imageSource: "openai" | "failed";
   agentTrace: AgentTrace[];
   source: "solar" | "fallback";
   verification?: Verification;

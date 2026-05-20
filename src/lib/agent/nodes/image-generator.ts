@@ -1,4 +1,4 @@
-import { generateAzureImage } from "../../image-gen";
+import { generateOpenAIImage } from "../../image-gen";
 import type { PromotionStateType } from "../state";
 
 export async function imageGenerator(state: PromotionStateType) {
@@ -14,14 +14,14 @@ export async function imageGenerator(state: PromotionStateType) {
   }
 
   const productImage = state.request.productImage;
-  const result = await generateAzureImage(state.copy.imagePrompt, {
+  const result = await generateOpenAIImage(state.copy.imagePrompt, {
     productImage,
     jobId: state.jobId,
   });
 
   if (result.kind === "ok") {
     return {
-      image: { dataUrl: result.dataUrl, source: "azure" as const },
+      image: { dataUrl: result.dataUrl, source: "openai" as const },
       imageFailure: undefined,
       agentTrace: [
         {

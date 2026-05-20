@@ -39,7 +39,7 @@ export async function runPromotionJob(
     // Mock metadata (palette/title/motif) is still computed because the UI
     // uses palette accents around the image card. The image dataUrl itself
     // is NEVER substituted with the mock SVG — that was the misleading
-    // behavior the user reported. If Azure failed, result.image is undefined
+    // behavior the user reported. If OpenAI failed, result.image is undefined
     // and result.imageFailure carries the reason.
     const mockMeta = createMockImage(request, lastState.copy.imagePrompt);
 
@@ -52,7 +52,7 @@ export async function runPromotionJob(
         title: mockMeta.title,
         motif: mockMeta.motif,
       };
-      imageSource = "azure";
+      imageSource = "openai";
     } else {
       resultImage = undefined;
       imageSource = "failed";

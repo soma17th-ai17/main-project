@@ -19,7 +19,7 @@ const features = [
     icon: Wand2,
     title: "AI 에이전트가 1장 자동 합성",
     body:
-      "Solar 카피 → Azure 이미지 → Upstage IE 검증까지 LangGraph 파이프라인이 한 번에 처리해요.",
+      "Solar 카피 → OpenAI 이미지 → Upstage IE 검증까지 LangGraph 파이프라인이 한 번에 처리해요.",
   },
   {
     icon: Camera,

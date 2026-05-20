@@ -15,7 +15,7 @@ const steps = [
   },
   {
     n: "03",
-    title: "Azure 이미지 생성 + 검증",
+    title: "OpenAI 이미지 생성 + 검증",
     body: "GPT-Image-2 로 1장 합성 후 Upstage IE 가 핵심 키워드 누락을 검증해요.",
   },
   {
@@ -39,8 +39,8 @@ export function FlowSection() {
             </h2>
           </div>
           <p className="max-w-sm text-sm text-muted-foreground">
-            디자인 지식이 없어도 됩니다. Azure 키 미설정 시 이미지는 mock SVG 로
-            대체되며 텍스트는 그대로 생성돼요.
+            디자인 지식이 없어도 됩니다. OpenAI 키 미설정 시 이미지는 실패 사유를
+            명확히 보여주고 텍스트는 그대로 생성돼요.
           </p>
         </div>
 
